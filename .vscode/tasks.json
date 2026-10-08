@@ -1,0 +1,19 @@
+{
+  // Ctrl+Shift+P > "Tasks: Run Task"로 실행. 파이썬은 VS Code에서 선택한 인터프리터(lerobot 환경)를 쓴다.
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "1. 포트 찾기", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "ports"], "problemMatcher": [] },
+    { "label": "2. 카메라 보기", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "cams"], "problemMatcher": [] },
+    { "label": "3. 카메라 fps 확인", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "fps"], "problemMatcher": [] },
+    { "label": "4. 캘리브레이션", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "calibrate", "${input:arm}"], "problemMatcher": [] },
+    { "label": "5. 텔레옵", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "teleop"], "problemMatcher": [] },
+    { "label": "6. 녹화", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "record", "-n", "${input:episodes}"], "problemMatcher": [] },
+    { "label": "6-1. 녹화 이어서", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "record", "-n", "${input:episodes}", "--resume"], "problemMatcher": [] },
+    { "label": "7. 학습", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "train"], "problemMatcher": [] },
+    { "label": "8. 실물 평가", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "eval", "-n", "${input:episodes}"], "problemMatcher": [] }
+  ],
+  "inputs": [
+    { "id": "arm", "type": "pickString", "description": "캘리브레이션할 팔", "options": ["both", "follower", "leader"], "default": "both" },
+    { "id": "episodes", "type": "promptString", "description": "에피소드 수", "default": "10" }
+  ]
+}
