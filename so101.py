@@ -9,6 +9,7 @@
   python so101.py record -n 10         # 이어서 녹화하려면 --resume
   python so101.py train
   python so101.py eval -n 10
+  python so101.py web                  # 웹 화면, 로봇 없이 보려면 --mock
 """
 import argparse
 import shutil
@@ -204,6 +205,13 @@ def cmd_eval(a):
     )
 
 
+def cmd_web(a):
+    """웹 화면 서버 실행"""
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "web"))
+    from server import serve
+    serve(mock=a.mock, host=a.host, port=a.port)
+
+
 def main():
     """하위 명령 정의와 실행"""
     p = argparse.ArgumentParser(description="SO-101 모방학습 실행기")
@@ -239,6 +247,12 @@ def main():
     s.add_argument("-n", type=int, default=10)
     s.add_argument("--checkpoint")
     s.set_defaults(f=cmd_eval)
+
+    s = sub.add_parser("web", help="웹 화면 (조작, 데이터, 학습, 평가, 캘리브레이션)")
+    s.add_argument("--mock", action="store_true", help="로봇 없이 모의 장치로 실행")
+    s.add_argument("--host", default="127.0.0.1", help="다른 기기에서 보려면 0.0.0.0")
+    s.add_argument("--port", type=int)
+    s.set_defaults(f=cmd_web)
 
     a = p.parse_args()
     a.f(a)

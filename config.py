@@ -16,6 +16,13 @@ DATASET = "local/so101_pick_pilot"
 TASK = "Pick the block and place it in the container"
 EPISODE_TIME_S = 30
 RESET_TIME_S = 15
+TARGET_EPISODES = 50  # 웹 화면 진행률의 목표 에피소드 수
+
+# 평가: 물체를 놓을 위치 격자 (열 x 행), 회차마다 한 칸씩 차례로 사용
+EVAL_GRID = (5, 4)
+
+# 웹 화면: `python so101.py web` 후 http://localhost:8000
+WEB_PORT = 8000
 
 # 학습
 POLICY = "act"
