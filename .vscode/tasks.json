@@ -2,6 +2,8 @@
   // Ctrl+Shift+P > "Tasks: Run Task"로 실행. 파이썬은 VS Code에서 선택한 인터프리터(lerobot 환경)를 쓴다.
   "version": "2.0.0",
   "tasks": [
+    { "label": "0. 웹 화면", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "web"], "isBackground": true, "problemMatcher": [] },
+    { "label": "0-1. 웹 화면 (모의 장치)", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "web", "--mock"], "isBackground": true, "problemMatcher": [] },
     { "label": "1. 포트 찾기", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "ports"], "problemMatcher": [] },
     { "label": "2. 카메라 보기", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "cams"], "problemMatcher": [] },
     { "label": "3. 카메라 fps 확인", "type": "process", "command": "${command:python.interpreterPath}", "args": ["so101.py", "fps"], "problemMatcher": [] },
