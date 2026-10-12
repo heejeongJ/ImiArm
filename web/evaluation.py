@@ -1,0 +1,82 @@
+"""실물 평가 세션"""
+import threading
+import time
+
+import config as C
+import store
+from rig import Busy
+
+
+class Evaluation:
+    """체크포인트 하나로 물체 위치 격자를 차례로 평가"""
+    def __init__(self, rig):
+        self.rig = rig
+        self.session = None
+        self.policy = None
+        self.loading = False
+        self.error = ""
+        self.trial_t0 = None
+
+    def prepare(self, checkpoint, label, task):
+        """정책 로드(백그라운드) 후 평가 세션 생성"""
+        if self.loading:
+            raise Busy("모델을 읽는 중입니다")
+        if self.rig.mode not in ("idle", "teleop"):
+            raise Busy("조작 화면에서 장치를 먼저 연결하세요")
+        self.end()
+        self.loading, self.error = True, ""
+
+        def load():
+            """정책 로드와 세션 생성"""
+            try:
+                self.policy = self.rig.load_policy(checkpoint)
+                self.session = store.new_eval(checkpoint, label)
+                self.session["task"] = task
+            except Exception as e:
+                self.error = f"모델을 읽지 못했습니다: {e}"
+            finally:
+                self.loading = False
+        threading.Thread(target=load, daemon=True).start()
+
+    def _need_session(self):
+        """평가 세션이 없으면 거부"""
+        if not self.session:
+            raise Busy("평가할 모델을 먼저 고르세요")
+
+    def start_trial(self):
+        """다음 위치에서 회차 시작, 정책 실행"""
+        self._need_session()
+        if self.trial_t0 is not None:
+            raise Busy("이번 회차를 먼저 성공/실패로 정리하세요")
+        if len(self.session["trials"]) >= C.EVAL_GRID[0] * C.EVAL_GRID[1]:
+            raise Busy("모든 위치를 평가했습니다")
+        self.rig.run_policy(self.policy, self.session["task"])
+        self.trial_t0 = time.time()
+
+    def finish_trial(self, success, reason):
+        """회차 결과 기록 후 시작 자세로 복귀"""
+        self._need_session()
+        if self.trial_t0 is None:
+            raise Busy("진행 중인 회차가 없습니다")
+        duration = time.time() - self.trial_t0
+        self.trial_t0 = None
+        self.rig.stop_policy(go_home=True)
+        trial = {"pos": len(self.session["trials"]), "success": success, "reason": reason.strip(),
+                 "duration_s": round(duration, 1)}
+        task = self.session.get("task")
+        self.session = store.add_trial(self.session["id"], trial)
+        self.session["task"] = task
+
+    def end(self):
+        """평가 세션 종료, 실행 중인 정책 중지"""
+        if self.trial_t0 is not None and self.rig.mode == "policy":
+            self.rig.stop_policy(go_home=False)
+        self.session, self.policy, self.trial_t0 = None, None, None
+
+    def status(self):
+        """화면용 평가 상태와 전체 기록"""
+        return {
+            "session": self.session, "loading": self.loading, "error": self.error,
+            "trial_running": self.trial_t0 is not None, "grid": list(C.EVAL_GRID),
+            "history": store.evals(),
+        }
