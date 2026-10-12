@@ -17,7 +17,6 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 
 import config as C
@@ -156,6 +155,8 @@ def cmd_record(a):
         f"--dataset.reset_time_s={C.RESET_TIME_S}",
         f"--dataset.fps={C.FPS}",
         "--dataset.push_to_hub=false",
+        # 이름 뒤 날짜 자동 추가 끄기, train과 웹 화면이 같은 이름으로 찾음
+        "--dataset.no_stamp=true",
         f"--resume={str(a.resume).lower()}",
     )
 
@@ -186,23 +187,37 @@ def cmd_train(a):
 
 
 def cmd_eval(a):
-    """실물 평가, 정책이 로봇을 움직이며 결과를 eval_ 데이터셋에 기록"""
-    ckpt = a.checkpoint or f"outputs/train/{run_name()}/checkpoints/last/pretrained_model"
+    """실물 평가, 정책이 로봇을 움직이며 결과를 rollout_ 데이터셋에 기록"""
+    ckpt = a.checkpoint or latest_checkpoint()
     if not Path(ckpt).exists():
         sys.exit(f"체크포인트가 없습니다: {ckpt}")
-    # 평가 데이터셋 이름은 eval_로 시작, 매번 새로 생성
-    stamp = datetime.now().strftime("%m%d_%H%M")
+    # 평가 데이터셋 이름은 rollout_로 시작, LeRobot이 날짜를 붙여 매번 새로 생성
     run(
-        "lerobot-record", *robot_args(),
+        "lerobot-rollout", *robot_args(),
+        "--strategy.type=episodic",
+        f"--policy.path={ckpt}",
+        f"--fps={C.FPS}",
         "--display_data=true",
-        f"--dataset.repo_id=local/eval_{run_name()}_{stamp}",
+        f"--dataset.repo_id=local/rollout_{run_name()}",
         f"--dataset.num_episodes={a.n}",
         f"--dataset.single_task={C.TASK}",
         f"--dataset.episode_time_s={C.EPISODE_TIME_S}",
         f"--dataset.reset_time_s={C.RESET_TIME_S}",
+        f"--dataset.fps={C.FPS}",
         "--dataset.push_to_hub=false",
-        f"--policy.path={ckpt}",
     )
+
+
+def latest_checkpoint():
+    """기본 평가 체크포인트, checkpoints/last가 없으면 가장 큰 스텝"""
+    ckpts = Path("outputs/train") / run_name() / "checkpoints"
+    last = ckpts / "last" / "pretrained_model"
+    if last.exists():
+        return str(last)
+    # Windows 개발자 모드가 꺼져 있으면 LeRobot이 last 바로가기를 못 만듦
+    steps = sorted((p for p in ckpts.glob("*/pretrained_model") if p.parent.name.isdigit()),
+                   key=lambda p: int(p.parent.name))
+    return str(steps[-1]) if steps else str(last)
 
 
 def cmd_web(a):
