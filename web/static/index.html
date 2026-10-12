@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>metarobo</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <div class="brand-row">
+    <div class="brand">metarobo</div>
+    <nav aria-label="화면">
+      <a href="/">조작</a>
+      <a href="/data">데이터</a>
+      <a href="/train">학습</a>
+      <a href="/eval">평가</a>
+      <a href="/sim">시뮬레이션</a>
+      <a href="/calib">캘리브레이션</a>
+    </nav>
+  </div>
+  <div class="head-actions">
+    <span id="mock-badge" class="badge" hidden>모의 장치</span>
+    <button id="devices-toggle" class="btn" type="button" aria-expanded="false" hidden>장비 구성
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+    <button id="estop" class="btn danger" type="button" title="정책, 텔레옵, 녹화를 멈추고 지금 자세를 유지합니다 (Esc)">비상 정지</button>
+  </div>
+</header>
+<div id="page" class="page"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
