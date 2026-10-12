@@ -19,7 +19,7 @@ LeRobot CLI를 `config.py` 설정 하나로 실행하는 래퍼입니다.
 | 5 | `teleop` | 동작 전략을 하나로 정하기 |
 | 6 | `record -n 10` | 녹화 중 → 다음, ← 다시 녹화, Esc 중단. 이어서 녹화는 `--resume` |
 | 7 | `train` | 결과는 `outputs/train/` |
-| 8 | `eval -n 10` | 정책이 로봇을 움직이므로 비상정지 준비 |
+| 8 | `eval -n 10` | 정책이 로봇을 움직이므로 비상정지 준비. `lerobot-rollout`으로 실행되며 키 조작은 녹화와 같음. 결과는 `local/rollout_…` 데이터셋 |
 
 데이터셋은 `%USERPROFILE%\.cache\huggingface\lerobot\local\` 아래에 저장됩니다.
 
