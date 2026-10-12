@@ -156,6 +156,8 @@ def cmd_record(a):
         f"--dataset.reset_time_s={C.RESET_TIME_S}",
         f"--dataset.fps={C.FPS}",
         "--dataset.push_to_hub=false",
+        # 이름 뒤 날짜 자동 추가 끄기, train과 웹 화면이 같은 이름으로 찾음
+        "--dataset.no_stamp=true",
         f"--resume={str(a.resume).lower()}",
     )
 
