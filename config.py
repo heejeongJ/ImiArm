@@ -7,7 +7,7 @@ LEADER_PORT = "COM4"
 FOLLOWER_ID = "follower"
 LEADER_ID = "leader"
 
-# 카메라: `python so101.py cams`로 번호 확인. 이름은 학습 데이터의 키가 되므로 실험 중 바꾸지 않는다.
+# 카메라: `python so101.py cams`로 번호 확인, 이름은 학습 데이터의 키라 실험 중 변경 금지
 CAMERAS = {"front": 1, "wrist": 2}
 WIDTH, HEIGHT, FPS = 640, 480, 30
 
@@ -19,6 +19,6 @@ RESET_TIME_S = 15
 
 # 학습
 POLICY = "act"
-TRAIN_STEPS = 20000  # 파일럿용. 본 학습은 100000 정도
+TRAIN_STEPS = 20000  # 파일럿용, 본 학습은 100000 정도
 BATCH_SIZE = 8
 DEVICE = "cuda"

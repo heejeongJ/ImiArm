@@ -1,4 +1,4 @@
-"""SO-101 모방학습 실행기. LeRobot CLI를 config.py 설정으로 호출한다.
+"""SO-101 모방학습 실행기, config.py 설정으로 LeRobot CLI 호출
 
 사용 예:
   python so101.py ports
@@ -23,7 +23,7 @@ import config as C
 
 
 def exe(name):
-    """lerobot 환경의 실행 파일을 찾는다. VS Code가 다른 파이썬을 쓰면 여기서 걸린다."""
+    """lerobot 환경의 실행 파일 찾기, VS Code가 다른 파이썬을 쓰면 여기서 중단"""
     env = Path(sys.executable).parent
     for d in (env / "Scripts", env):
         for suffix in (".exe", ""):
@@ -37,6 +37,7 @@ def exe(name):
 
 
 def run(name, *args):
+    """명령 출력 후 실행, 실패 시 같은 종료 코드로 종료"""
     cmd = [exe(name), *args]
     print(">", subprocess.list2cmdline(cmd), flush=True)
     code = subprocess.call(cmd)
@@ -45,6 +46,7 @@ def run(name, *args):
 
 
 def robot_args(with_cameras=True):
+    """팔로워 암 CLI 인자, 카메라 설정 포함 여부 선택"""
     args = ["--robot.type=so101_follower", f"--robot.port={C.FOLLOWER_PORT}", f"--robot.id={C.FOLLOWER_ID}"]
     if with_cameras:
         cams = ", ".join(
@@ -56,10 +58,12 @@ def robot_args(with_cameras=True):
 
 
 def teleop_args():
+    """리더 암 CLI 인자"""
     return ["--teleop.type=so101_leader", f"--teleop.port={C.LEADER_PORT}", f"--teleop.id={C.LEADER_ID}"]
 
 
 def open_cam(idx):
+    """config 해상도와 fps로 카메라 열기 (Windows DirectShow)"""
     import cv2
     cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, C.WIDTH)
@@ -69,7 +73,7 @@ def open_cam(idx):
 
 
 def cmd_cams(a):
-    """카메라를 하나씩 띄워 번호를 확인한다. n 다음, p 이전, q 종료."""
+    """카메라를 하나씩 띄워 번호 확인, n 다음, p 이전, q 종료"""
     import cv2
     idxs, i = a.indices, 0
     while True:
@@ -95,11 +99,12 @@ def cmd_cams(a):
 
 
 def cmd_fps(a):
-    """config의 카메라를 동시에 열어 실제 fps를 잰다. 녹화 조건과 같게 하려고 동시에 연다."""
+    """config의 카메라를 동시에 열어 실제 fps 측정, 녹화 조건과 같게 동시에 열기"""
     import cv2
     res = {}
 
     def measure(name, idx):
+        """3초간 받은 프레임 수로 fps 계산, 마지막 프레임 저장"""
         cap = open_cam(idx)
         for _ in range(10):
             cap.read()
@@ -125,6 +130,7 @@ def cmd_fps(a):
 
 
 def cmd_calibrate(a):
+    """팔로워, 리더 캘리브레이션"""
     if a.which in ("follower", "both"):
         run("lerobot-calibrate", *robot_args(with_cameras=False))
     if a.which in ("leader", "both"):
@@ -132,11 +138,13 @@ def cmd_calibrate(a):
 
 
 def cmd_teleop(a):
+    """텔레옵 연습, --show면 카메라 화면 함께 표시"""
     cams = robot_args(with_cameras=a.show)
     run("lerobot-teleoperate", *cams, *teleop_args(), f"--display_data={str(a.show).lower()}")
 
 
 def cmd_record(a):
+    """시연 녹화, 데이터셋은 로컬에만 저장"""
     run(
         "lerobot-record", *robot_args(), *teleop_args(),
         "--display_data=true",
@@ -152,10 +160,12 @@ def cmd_record(a):
 
 
 def run_name():
+    """학습 결과 폴더 이름 (정책_데이터셋)"""
     return f"{C.POLICY}_{C.DATASET.split('/')[-1]}"
 
 
 def cmd_train(a):
+    """정책 학습, --resume이면 마지막 체크포인트에서 이어서"""
     out = Path("outputs/train") / run_name()
     if a.resume:
         run("lerobot-train", f"--config_path={out}/checkpoints/last/pretrained_model/train_config.json", "--resume=true")
@@ -175,10 +185,11 @@ def cmd_train(a):
 
 
 def cmd_eval(a):
+    """실물 평가, 정책이 로봇을 움직이며 결과를 eval_ 데이터셋에 기록"""
     ckpt = a.checkpoint or f"outputs/train/{run_name()}/checkpoints/last/pretrained_model"
     if not Path(ckpt).exists():
         sys.exit(f"체크포인트가 없습니다: {ckpt}")
-    # 평가 데이터셋 이름은 eval_로 시작해야 하고, 매번 새로 만든다
+    # 평가 데이터셋 이름은 eval_로 시작, 매번 새로 생성
     stamp = datetime.now().strftime("%m%d_%H%M")
     run(
         "lerobot-record", *robot_args(),
@@ -194,6 +205,7 @@ def cmd_eval(a):
 
 
 def main():
+    """하위 명령 정의와 실행"""
     p = argparse.ArgumentParser(description="SO-101 모방학습 실행기")
     sub = p.add_subparsers(dest="cmd", required=True)
 
