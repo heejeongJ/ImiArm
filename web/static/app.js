@@ -803,6 +803,29 @@ function evalPage(el) {
   }, 500);
 }
 
+// 가동 범위 기록 때 관절별로 움직이는 방법
+const JOINT_HOW = {
+  shoulder_pan: "받침에서 팔 전체를 왼쪽 끝, 오른쪽 끝까지 돌리기",
+  shoulder_lift: "어깨에서 팔을 앞으로 숙였다가 뒤로 끝까지 젖히기",
+  elbow_flex: "팔꿈치를 완전히 접었다가 끝까지 펴기",
+  wrist_flex: "손목을 위로 끝까지, 아래로 끝까지 꺾기",
+  wrist_roll: "기록하지 않으므로 움직이지 않아도 됨",
+  gripper: "집게를 완전히 닫았다가 끝까지 벌리기",
+};
+
+// 옆에서 본 SO-101 팔 그림, 원 안 숫자는 서보 번호
+const ARM_SVG = (() => {
+  const pts = [[60, 112], [60, 90], [130, 38], [200, 62], [226, 74], [252, 86]];
+  const link = (a, b) => `<line x1="${pts[a][0]}" y1="${pts[a][1]}" x2="${pts[b][0]}" y2="${pts[b][1]}"/>`;
+  const dot = ([x, y], i) => `<circle cx="${x}" cy="${y}" r="9" fill="var(--blue)"/><text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--card)">${i + 1}</text>`;
+  return `<svg viewBox="0 0 300 140" width="260" height="121" role="img" aria-label="SO-101 팔의 관절 위치와 서보 번호">
+    <rect x="18" y="124" width="84" height="10" rx="3" fill="var(--media)"/>
+    <rect x="40" y="98" width="40" height="28" rx="6" fill="var(--media)" stroke="var(--gray-line)"/>
+    <g stroke="var(--gray-line)" stroke-width="8" stroke-linecap="round">${link(1, 2)}${link(2, 3)}${link(3, 4)}${link(4, 5)}
+      <line x1="252" y1="86" x2="286" y2="80"/><line x1="252" y1="86" x2="278" y2="108"/></g>
+    ${pts.map(dot).join("")}</svg>`;
+})();
+
 // 캘리브레이션 화면: 단계 진행과 관절별 가동 범위
 function calibPage(el) {
   let arm = storeGet("calibArm", "follower");
@@ -810,6 +833,8 @@ function calibPage(el) {
     <section class="card stack" style="flex:1 1 340px" id="c-left"></section>
     <section class="card" style="flex:999 1 560px">
       <div class="card-head"><div class="title">관절별 가동 범위</div><div class="note">파란 막대는 기록된 범위, 세로선은 현재 위치</div></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">${ARM_SVG}
+        <div class="note">옆에서 본 팔입니다. 원 안 숫자는 표의 서보 번호와 같습니다.</div></div>
       <div class="table-wrap"><table class="tbl" style="min-width:620px"><thead><tr><th>관절</th><th>서보 번호</th><th>최소</th><th style="width:34%">범위</th><th>최대</th><th>상태</th></tr></thead>
       <tbody id="c-rows"></tbody></table></div>
       <div class="note" style="margin-top:14px">범위가 좁게 기록된 관절은 끝까지 움직이지 않은 것입니다. 저장 전에 다시 움직여 주세요. 손목 회전은 한 바퀴를 모두 쓰므로 기록하지 않습니다.</div>
@@ -864,7 +889,7 @@ function calibPage(el) {
         ${s.error ? `<div class="banner err">${esc(s.error)}</div>` : ""}
         <ol class="steps">
           <li class="${stepState(1)}"><div class="num">1</div><div><div style="font-weight:600">중간 자세 맞추기</div><div class="sub" style="color:var(--text-2)">토크가 풀립니다. 모든 관절을 가동 범위의 가운데에 두고 확인을 누릅니다.</div>${tag(1)}</div></li>
-          <li class="${stepState(2)}"><div class="num">2</div><div><div style="font-weight:600">가동 범위 기록</div><div class="sub" style="color:var(--text-2)">각 관절을 양쪽 끝까지 천천히 움직입니다. 오른쪽 표에 최소와 최대가 기록됩니다.</div>${tag(2)}</div></li>
+          <li class="${stepState(2)}"><div class="num">2</div><div><div style="font-weight:600">가동 범위 기록</div><div class="sub" style="color:var(--text-2)">토크가 풀린 팔을 손으로 잡고 각 관절을 하나씩 양쪽 끝까지 천천히 움직입니다. 억지로 밀지 말고 막히는 곳까지만 움직입니다. 관절별 방법은 오른쪽 표에 있고 최소와 최대가 기록됩니다.</div>${tag(2)}</div></li>
           <li class="${stepState(3)}"><div class="num">3</div><div><div style="font-weight:600">저장과 검증</div><div class="sub" style="color:var(--text-2)">설정을 저장한 뒤 조작 화면의 텔레옵으로 리더 암 동작을 따라 하는지 확인합니다.</div>${step === 3 ? `<div class="note" style="margin-top:2px">저장됨</div>` : ""}</div></li>
         </ol>
         <div class="btn-row">${btns}</div>`;
@@ -872,7 +897,7 @@ function calibPage(el) {
     $("#c-rows").innerHTML = s.joints.map((j) => {
       const rec = s.arm === arm && j.min != null;
       const st = s.arm === arm ? j.state : "대기";
-      return `<tr><td style="padding-top:17px;padding-bottom:17px">${JOINT_KO[j.name]}</td><td>${j.id}</td><td>${rec ? deg(j.min) : "-"}</td>
+      return `<tr><td style="padding-top:17px;padding-bottom:17px">${JOINT_KO[j.name]}<div class="note" style="font-weight:400;margin-top:2px">${JOINT_HOW[j.name]}</div></td><td>${j.id}</td><td>${rec ? deg(j.min) : "-"}</td>
         <td><div class="range"><div class="track"></div>
           ${rec ? `<div class="fill" style="left:${pct(j.min)}%;width:${pct(j.max) - pct(j.min)}%"></div>` : ""}
           ${s.arm === arm && j.pos != null ? `<div class="now" style="left:${pct(j.pos)}%"></div>` : ""}</div></td>
