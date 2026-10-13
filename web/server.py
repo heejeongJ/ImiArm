@@ -2,6 +2,7 @@
 import json
 import logging
 import mimetypes
+import platform
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,7 +42,7 @@ class App:
                  "spec": "STS3215 서보 6개", "setting": f"1Mbps, {C.FPS}Hz"},
                 *[{"name": f"카메라 {n}", "role": "데이터 키 observation.images." + n, "port": f"camera {i}",
                    "spec": "USB 카메라 (OpenCV)", "setting": f"{C.WIDTH}×{C.HEIGHT}, {C.FPS}프레임"} for n, i in cams],
-                {"name": "연산 장치", "role": "정책 추론, 학습", "port": "이 컴퓨터",
+                {"name": "연산 장치", "role": "정책 추론, 학습", "port": platform.node() or "이 컴퓨터",
                  "spec": gpu["name"] or "GPU 없음 (CPU)",
                  "setting": f"그래픽 메모리 {gpu['total_gb']:.0f}GB" if gpu["total_gb"] else f"설정 장치 {C.DEVICE}"},
             ],
