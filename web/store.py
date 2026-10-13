@@ -82,6 +82,11 @@ def list_datasets():
     return out
 
 
+def total_episodes(repo):
+    """데이터셋 전체 에피소드 수 (meta/info.json)"""
+    return _read(_root(repo) / "meta" / "info.json", {}).get("total_episodes", 0)
+
+
 def _root(repo):
     """데이터셋 루트 경로, LeRobot 홈 밖이면 거부"""
     root = (lerobot_home() / repo).resolve()

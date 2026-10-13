@@ -70,9 +70,13 @@ class Trainer:
         # SmolVLA는 smolvla_base에서 미세조정
         args.insert(1, "--policy.path=lerobot/smolvla_base" if policy == "smolvla" else f"--policy.type={policy}")
         # 삭제 표시와 유지하지 않은 실패 에피소드 제외
+        # exclude_episodes는 정식 릴리스(0.6.0, 0.6.1)에 없어 포함 목록(episodes)으로 전달
         excluded = store.excluded_episodes(repo)
         if excluded:
-            args.append(f"--dataset.exclude_episodes=[{','.join(map(str, excluded))}]")
+            keep = [i for i in range(store.total_episodes(repo)) if i not in set(excluded)]
+            if not keep:
+                raise Busy("학습할 에피소드가 없습니다. 데이터 화면에서 삭제 표시나 결과를 확인하세요")
+            args.append(f"--dataset.episodes=[{','.join(map(str, keep))}]")
 
         self.run, self.total, self.step, self.eta_s, self.rows = run, steps, 0, None, []
         self.params = {"policy": policy, "repo": repo, "steps": steps, "batch": batch, "lr": lr,
