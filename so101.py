@@ -145,8 +145,7 @@ def cmd_teleop(a):
 
 def cmd_record(a):
     """시연 녹화, 데이터셋은 로컬에만 저장"""
-    run(
-        "lerobot-record", *robot_args(), *teleop_args(),
+    args = [
         "--display_data=true",
         f"--dataset.repo_id={C.DATASET}",
         f"--dataset.num_episodes={a.n}",
@@ -155,10 +154,33 @@ def cmd_record(a):
         f"--dataset.reset_time_s={C.RESET_TIME_S}",
         f"--dataset.fps={C.FPS}",
         "--dataset.push_to_hub=false",
-        # 이름 뒤 날짜 자동 추가 끄기, train과 웹 화면이 같은 이름으로 찾음
-        "--dataset.no_stamp=true",
         f"--resume={str(a.resume).lower()}",
-    )
+    ]
+    # 이름 뒤 날짜 자동 추가 끄기, train과 웹 화면이 같은 이름으로 찾음 (LeRobot 0.6.1부터 지원)
+    if supports_no_stamp():
+        args.append("--dataset.no_stamp=true")
+    run("lerobot-record", *robot_args(), *teleop_args(), *args)
+
+
+def supports_no_stamp():
+    """설치된 LeRobot의 --dataset.no_stamp 지원 여부"""
+    from dataclasses import fields
+    from lerobot.configs.dataset import DatasetRecordConfig
+    return any(f.name == "no_stamp" for f in fields(DatasetRecordConfig))
+
+
+def check_dataset():
+    """학습 전 DATASET 존재 확인, 날짜 붙은 데이터셋만 있으면 이름 안내 후 종료"""
+    from lerobot.utils.constants import HF_LEROBOT_HOME
+    root = Path(HF_LEROBOT_HOME) / C.DATASET
+    if (root / "meta" / "info.json").exists():
+        return
+    # LeRobot 0.6.0의 record는 이름 뒤에 날짜를 붙여 저장
+    stamped = sorted(p.name for p in root.parent.glob(f"{root.name}_*") if (p / "meta" / "info.json").exists())
+    if not stamped:
+        sys.exit(f"데이터셋이 없습니다: {C.DATASET}")
+    names = "\n".join(f"  {root.parent.name}/{n}" for n in stamped)
+    sys.exit(f"데이터셋이 없습니다: {C.DATASET}\n날짜가 붙은 데이터셋이 있습니다. config.py의 DATASET을 그중 하나로 바꾸세요:\n{names}")
 
 
 def run_name():
@@ -172,6 +194,7 @@ def cmd_train(a):
     if a.resume:
         run("lerobot-train", f"--config_path={out}/checkpoints/last/pretrained_model/train_config.json", "--resume=true")
         return
+    check_dataset()
     run(
         "lerobot-train",
         f"--dataset.repo_id={C.DATASET}",
