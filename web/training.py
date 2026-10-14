@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from datetime import datetime
 
@@ -17,6 +18,13 @@ LOG_FREQ = 100
 METRIC = re.compile(r"(\w+(?:/s)?):(\S+)")
 log = logging.getLogger("metarobo")
 TQDM = re.compile(r"Training:.*?\|\s*(\d+)/\d+\s*\[[^<\]]*<([\d:]+)")  # "Training: 6%|..| 12/200 [00:30<07:41, ..]"
+# 첫 기록 전 준비 단계, lerobot-train 출력 문구 기준
+STAGES = [
+    ("Creating dataset", "데이터 불러오는 중"),
+    ("Creating policy", "모델 준비 중"),
+    ("Creating optimizer", "최적화 설정 중"),
+    ("Start offline training", "첫 스텝 준비 중"),
+]
 
 
 def _hms(s):
@@ -40,6 +48,8 @@ class Trainer:
         self.tail = deque(maxlen=30)
         self.params = {}
         self.log_freq = LOG_FREQ
+        self.started = None
+        self.stage = None
 
     def start(self, policy, repo, steps, batch, lr, save_freq):
         """학습 시작, 학습 제외 에피소드 반영"""
@@ -74,15 +84,16 @@ class Trainer:
         # 삭제 표시와 유지하지 않은 실패 에피소드 제외
         # exclude_episodes는 정식 릴리스(0.6.0, 0.6.1)에 없어 포함 목록(episodes)으로 전달
         excluded = store.excluded_episodes(repo)
+        keep = [i for i in range(store.total_episodes(repo)) if i not in set(excluded)]
         if excluded:
-            keep = [i for i in range(store.total_episodes(repo)) if i not in set(excluded)]
             if not keep:
                 raise Busy("학습할 에피소드가 없습니다. 데이터 화면에서 삭제 표시나 결과를 확인하세요")
             args.append(f"--dataset.episodes=[{','.join(map(str, keep))}]")
 
         self.run, self.total, self.step, self.eta_s, self.rows = run, steps, 0, None, []
         self.params = {"policy": policy, "repo": repo, "steps": steps, "batch": batch, "lr": lr,
-                       "save_freq": save_freq, "excluded": len(excluded), "device": device}
+                       "save_freq": save_freq, "episodes": len(keep), "excluded": len(excluded), "device": device}
+        self.started, self.stage = time.time(), "학습 프로그램 시작 중"
         self.tail.clear()
         self.tail.append("> lerobot-train " + " ".join(args))
         self.proc = subprocess.Popen(
@@ -108,6 +119,7 @@ class Trainer:
                 if not line:
                     continue
             self.tail.append(line)
+            self.stage = next((ko for en, ko in STAGES if en in line), self.stage)
             if "step:" not in line or "loss:" not in line:
                 continue
             metrics = dict(METRIC.findall(line[line.index("step:"):]))
@@ -162,6 +174,7 @@ class Trainer:
             "hint": hint,
             "state": self.state, "run": self.run, "step": self.step if self.run else (last or {}).get("step", 0),
             "total": self.total, "params": self.params, "remaining_s": remaining,
+            "stage": self.stage, "log_freq": self.log_freq, "elapsed_s": time.time() - self.started if self.state == "running" else None,
             "loss": [[r["step"], r["loss"]] for r in rows],
             "recent": rows[-8:][::-1], "tail": list(self.tail)[-12:], "gpu": gpu_info(),
         }
