@@ -110,7 +110,7 @@ class Calibration:
         """2단계 완료: 범위 검사 후 모터와 캘리브레이션 파일에 저장"""
         if self.step != 2:
             raise Busy("2단계에서만 누를 수 있습니다")
-        same = [j for j in JOINTS if j != FULL_TURN and self.mins.get(j) == self.maxes.get(j)]
+        same = [j for j in JOINTS if j != FULL_TURN and self._span(j) < MOVED_DEG]
         if same:
             raise Busy(f"움직이지 않은 관절이 있습니다: {', '.join(same)}")
         with self._lock:
@@ -145,18 +145,26 @@ class Calibration:
                 pass
             self.dev = None
 
+    def _span(self, j):
+        """관절별 기록 범위(각도), 기록 전이면 0"""
+        if j not in self.mins:
+            return 0
+        return (self.maxes[j] - self.mins[j]) * 360 / 4096
+
     def status(self):
         """관절별 위치와 범위를 각도로 바꾼 화면용 상태"""
         joints = []
         for i, j in enumerate(JOINTS):
             row = {"name": j, "id": i + 1, "pos": None, "min": None, "max": None, "state": "대기"}
-            if self.step >= 2 and j in self.pos:
+            # 1단계부터 현재 위치 표시, 엉뚱한 팔이 연결되면 바로 확인 가능
+            if self.step in (1, 2) and j in self.pos:
                 row["pos"] = ticks_to_deg(self.pos[j])
-            if j == FULL_TURN and self.step >= 2:
-                row["state"] = "전체 회전"
-            elif self.step >= 2 and j in self.mins:
-                row["min"], row["max"] = ticks_to_deg(self.mins[j]), ticks_to_deg(self.maxes[j])
-                span = row["max"] - row["min"]
-                row["state"] = "미기록" if span < MOVED_DEG else "범위 좁음" if span < NARROW_DEG else "기록됨"
+            if self.step >= 2 and j in self.mins:
+                span = self._span(j)
+                if j == FULL_TURN:
+                    row["state"] = "미기록" if span < MOVED_DEG else "전체 회전"
+                else:
+                    row["min"], row["max"] = ticks_to_deg(self.mins[j]), ticks_to_deg(self.maxes[j])
+                    row["state"] = "미기록" if span < MOVED_DEG else "범위 좁음" if span < NARROW_DEG else "기록됨"
             joints.append(row)
         return {"arm": self.arm, "step": self.step, "error": self.error, "joints": joints}
