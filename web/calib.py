@@ -1,4 +1,5 @@
 """LeRobot의 calibrate()가 input()으로 Enter를 기다려서 같은 순서를 화면 버튼으로 분리"""
+import logging
 import math
 import threading
 import time
@@ -10,6 +11,8 @@ from rig import JOINTS, Busy
 FULL_TURN = "wrist_roll"
 NARROW_DEG = 90  # 이보다 좁게 기록된 관절은 끝까지 움직이지 않은 것으로 판단
 MOVED_DEG = 5  # 이보다 좁으면 아직 손대지 않은 관절로 판단
+ARMS = {"follower": "팔로워", "leader": "리더"}
+log = logging.getLogger("metarobo")
 
 
 def ticks_to_deg(v):
@@ -59,6 +62,8 @@ class Calibration:
         if self.rig.mode != "off":
             raise Busy("캘리브레이션 전에 조작 화면에서 장치 연결을 해제하세요")
         self.cancel()
+        log.info("캘리브레이션 시작: %s (%s)", ARMS.get(arm, arm),
+                 C.FOLLOWER_PORT if arm == "follower" else C.LEADER_PORT)
         self.arm, self.error = arm, ""
         self.pos, self.mins, self.maxes, self.homings = {}, {}, {}, None
         if not self.rig.mock:
@@ -93,6 +98,9 @@ class Calibration:
                             self.mins[j] = min(self.mins.get(j, v), v)
                             self.maxes[j] = max(self.maxes.get(j, v), v)
             except Exception as e:
+                # 같은 오류 반복은 한 번만 기록
+                if str(e) != self.error:
+                    log.warning("캘리브레이션 위치 읽기 실패: %s", e)
                 self.error = str(e)
             time.sleep(0.03)
 
@@ -105,6 +113,7 @@ class Calibration:
             pos = self._read()
             self.mins, self.maxes = dict(pos), dict(pos)
             self.step = 2
+        log.info("캘리브레이션 중간 자세 기록, 범위 기록 시작")
 
     def finish(self):
         """2단계 완료: 범위 검사 후 모터와 캘리브레이션 파일에 저장"""
@@ -125,10 +134,13 @@ class Calibration:
                 self.dev.calibration = cal
                 self.dev._save_calibration()
             self.step = 3
+        log.info("캘리브레이션 저장: %s", ARMS.get(self.arm, self.arm))
         self._close()
 
     def cancel(self):
         """진행 중인 캘리브레이션 취소"""
+        if self.step in (1, 2):
+            log.info("캘리브레이션 취소")
         self._close()
         self.step = 0
 
