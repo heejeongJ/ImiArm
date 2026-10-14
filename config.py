@@ -2,8 +2,8 @@
 # 하드웨어나 실험 조건이 바뀌면 현재 파일만 변경
 
 # 포트: `python so101.py ports`로 확인 (Windows는 COM3 같은 형식)
-FOLLOWER_PORT = "COM3"
-LEADER_PORT = "COM4"
+FOLLOWER_PORT = "COM4"
+LEADER_PORT = "COM3"
 FOLLOWER_ID = "follower"
 LEADER_ID = "leader"
 
