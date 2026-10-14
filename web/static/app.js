@@ -889,15 +889,23 @@ function calibPage(el) {
         ${s.error ? `<div class="banner err">${esc(s.error)}</div>` : ""}
         <ol class="steps">
           <li class="${stepState(1)}"><div class="num">1</div><div><div style="font-weight:600">중간 자세 맞추기</div><div class="sub" style="color:var(--text-2)">토크가 풀립니다. 모든 관절을 가동 범위의 가운데에 두고 확인을 누릅니다.</div>${tag(1)}</div></li>
-          <li class="${stepState(2)}"><div class="num">2</div><div><div style="font-weight:600">가동 범위 기록</div><div class="sub" style="color:var(--text-2)">토크가 풀린 팔을 손으로 잡고 각 관절을 하나씩 양쪽 끝까지 천천히 움직입니다. 억지로 밀지 말고 막히는 곳까지만 움직입니다. 관절별 방법은 오른쪽 표에 있고 최소와 최대가 기록됩니다.</div>${tag(2)}</div></li>
+          <li class="${stepState(2)}"><div class="num">2</div><div><div style="font-weight:600">가동 범위 기록</div><div class="sub" style="color:var(--text-2)">토크가 풀린 팔을 손으로 잡고 각 관절을 하나씩 양쪽 끝까지 천천히 움직입니다. 억지로 밀지 말고 막히는 곳까지만 움직입니다. 관절별 방법은 오른쪽 표에 있고 최소와 최대가 기록됩니다.</div>${tag(2)}${step === 2 ? `<div id="c-prog" style="margin-top:10px"></div>` : ""}</div></li>
           <li class="${stepState(3)}"><div class="num">3</div><div><div style="font-weight:600">저장과 검증</div><div class="sub" style="color:var(--text-2)">설정을 저장한 뒤 조작 화면의 텔레옵으로 리더 암 동작을 따라 하는지 확인합니다.</div>${step === 3 ? `<div class="note" style="margin-top:2px">저장됨</div>` : ""}</div></li>
         </ol>
         <div class="btn-row">${btns}</div>`;
     }
+    // 2단계 관절별 기록 현황
+    const prog = $("#c-prog");
+    if (prog) {
+      const rows = s.joints.filter((j) => j.state !== "전체 회전");
+      const done = rows.filter((j) => j.state === "기록됨").length;
+      prog.innerHTML = `<div style="font-weight:600">기록된 관절 <span style="color:var(--blue)">${done}</span> / ${rows.length}</div>
+        <div class="jchips">${rows.map((j) => `<span class="jchip ${j.state === "기록됨" ? "ok" : j.state === "범위 좁음" ? "narrow" : ""}">${j.state === "기록됨" ? "✓ " : ""}${JOINT_KO[j.name]}</span>`).join("")}</div>`;
+    }
     $("#c-rows").innerHTML = s.joints.map((j) => {
       const rec = s.arm === arm && j.min != null;
       const st = s.arm === arm ? j.state : "대기";
-      return `<tr><td style="padding-top:17px;padding-bottom:17px">${JOINT_KO[j.name]}<div class="note" style="font-weight:400;margin-top:2px">${JOINT_HOW[j.name]}</div></td><td>${j.id}</td><td>${rec ? deg(j.min) : "-"}</td>
+      return `<tr class="${st === "기록됨" ? "done" : ""}"><td style="padding-top:17px;padding-bottom:17px">${JOINT_KO[j.name]}<div class="note" style="font-weight:400;margin-top:2px">${JOINT_HOW[j.name]}</div></td><td>${j.id}</td><td>${rec ? deg(j.min) : "-"}</td>
         <td><div class="range"><div class="track"></div>
           ${rec ? `<div class="fill" style="left:${pct(j.min)}%;width:${pct(j.max) - pct(j.min)}%"></div>` : ""}
           ${s.arm === arm && j.pos != null ? `<div class="now" style="left:${pct(j.pos)}%"></div>` : ""}</div></td>
