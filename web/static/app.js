@@ -429,17 +429,37 @@ function dataPage(el) {
         <tbody>${eps.slice().reverse().map((e) => `
           <tr class="click ${e.index === sel ? "sel" : ""} ${e.deleted ? "dim" : ""}" data-ep="${e.index}" tabindex="0">
             <td>${pad3(e.index)}</td>
-            <td>${e.result === "success" ? "성공" : e.result === "fail" ? (e.keep ? "실패, 유지" : "실패") : "-"}</td>
+            <td>${e.result === "success" ? "성공" : e.result === "fail" ? (e.keep ? "실패, 학습 활용" : "실패") : "-"}</td>
             <td>${sec(e.length_s)}</td><td>${esc(e.position)}</td>
             <td>${[e.deleted ? "삭제 표시" : "", esc(e.memo)].filter(Boolean).join(", ")}</td>
           </tr>`).join("")}</tbody></table>
         ${eps.length ? "" : `<div class="empty">아직 에피소드가 없습니다.</div>`}
       </div>
-      <div class="note">학습에는 삭제 표시하지 않은 성공 에피소드와, 데이터에 유지한 실패 에피소드가 쓰입니다.</div>`;
-    $("#ds-select").onchange = (e) => { repo = e.target.value; sel = null; history.replaceState(null, "", `/data?repo=${encodeURIComponent(repo)}`); load(); };
+      <div class="note">학습에는 삭제 표시하지 않은 성공 에피소드와, 학습 활용으로 표시한 실패 에피소드가 쓰입니다.</div>`;
+    $("#ds-select").onchange = (e) => {
+      if (!discardOk()) { e.target.value = repo; return; }
+      repo = e.target.value; sel = null; history.replaceState(null, "", `/data?repo=${encodeURIComponent(repo)}`); load();
+    };
     $("#ds-reload").onclick = load;
-    $("#ds-left tbody").onclick = (e) => { const tr = e.target.closest("tr[data-ep]"); if (tr) select(+tr.dataset.ep, true); };
-    $("#ds-left tbody").onkeydown = (e) => { const tr = e.target.closest("tr[data-ep]"); if (tr && e.key === "Enter") select(+tr.dataset.ep, true); };
+    $("#ds-left tbody").onclick = (e) => { const tr = e.target.closest("tr[data-ep]"); if (tr) pick(+tr.dataset.ep); };
+    $("#ds-left tbody").onkeydown = (e) => { const tr = e.target.closest("tr[data-ep]"); if (tr && e.key === "Enter") pick(+tr.dataset.ep); };
+  }
+
+  // 물체 위치·메모 입력값이 저장된 값과 다른지
+  let shown = { position: "", memo: "" };
+  function dirty() {
+    const pos = $("#ep-pos"), memo = $("#ep-memo");
+    return !!pos && (pos.value !== shown.position || memo.value !== shown.memo);
+  }
+
+  // 저장 안 한 내용이 있으면 버릴지 확인
+  function discardOk() {
+    return !dirty() || confirm("저장하지 않은 내용이 있습니다. 버릴까요?");
+  }
+
+  // 사용자가 고른 에피소드로 이동
+  function pick(idx) {
+    if (discardOk()) select(idx, true);
   }
 
   // 라벨 저장 후 다시 불러오기, 저장 성공 여부 반환
@@ -449,13 +469,15 @@ function dataPage(el) {
     return ok;
   }
 
-  // 현재 결과와 유지 여부를 버튼 강조로 표시
+  // 현재 결과, 학습 활용, 삭제 표시를 버튼 강조로 표시, 학습 활용은 실패에서만 노출
   function paintLabel(e) {
-    for (const [a, on] of [["success", e.result === "success"], ["fail", e.result === "fail"], ["keep", e.keep]]) {
+    for (const [a, on] of [["success", e.result === "success"], ["fail", e.result === "fail"], ["keep", e.keep], ["delete", e.deleted]]) {
       const b = $(`#ds-right [data-act="${a}"]`);
       b.classList.toggle("primary", on);
       b.setAttribute("aria-pressed", on);
     }
+    $('#ds-right [data-act="keep"]').hidden = e.result !== "fail";
+    $("#ep-save").disabled = !dirty();
   }
 
   // 에피소드 선택, 영상/그래프/라벨 표시
@@ -466,11 +488,17 @@ function dataPage(el) {
     const right = $("#ds-right");
     right.hidden = false;
     if (!reloadMedia && right.dataset.ep === String(idx)) {
-      $("#ep-pos").value = e.position;
-      $("#ep-memo").value = e.memo;
+      // 다른 라벨 저장으로 다시 불러와도 입력 중인 내용은 유지
+      const editing = dirty();
+      shown = { position: e.position, memo: e.memo };
+      if (!editing) {
+        $("#ep-pos").value = e.position;
+        $("#ep-memo").value = e.memo;
+      }
       paintLabel(e);
       return;
     }
+    shown = { position: e.position, memo: e.memo };
     right.dataset.ep = String(idx);
     cancelAnimationFrame(raf);
     vids.length = 0;
@@ -497,18 +525,29 @@ function dataPage(el) {
         <div class="field"><label for="ep-pos">물체 위치</label><input id="ep-pos" class="input" value="${esc(e.position)}" placeholder="예: 왼쪽 앞"></div>
         <div class="field"><label for="ep-memo">메모</label><input id="ep-memo" class="input" value="${esc(e.memo)}" placeholder="예: 들어 올리다 놓침"></div>
       </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:-6px">
+        <button class="btn" id="ep-save" type="button" disabled>내용 변경</button>
+      </div>
       <div class="btn-row">
         <button class="btn" data-act="success" type="button">성공</button>
         <button class="btn" data-act="fail" type="button">실패</button>
-        <button class="btn" data-act="keep" type="button">데이터에 유지</button>
+        <button class="btn" data-act="keep" type="button">학습 활용</button>
         <button class="btn" data-act="delete" type="button">삭제 표시</button>
         <button class="btn" data-act="next" type="button">다음 에피소드</button>
       </div>`;
     paintLabel(e);
 
-    // 물체 위치와 메모는 결과와 별개로 바로 저장
-    $("#ep-pos").onchange = async (ev) => { if (await label({ position: ev.target.value })) toast("물체 위치를 저장했습니다"); };
-    $("#ep-memo").onchange = async (ev) => { if (await label({ memo: ev.target.value })) toast("메모를 저장했습니다"); };
+    // 물체 위치와 메모는 내용 변경 버튼으로만 함께 저장, 결과는 그대로
+    const save = async () => {
+      if (!dirty()) return;
+      if (await label({ position: $("#ep-pos").value, memo: $("#ep-memo").value })) toast("내용을 저장했습니다");
+    };
+    $("#ep-save").onclick = save;
+    for (const id of ["#ep-pos", "#ep-memo"]) {
+      $(id).oninput = () => ($("#ep-save").disabled = !dirty());
+      // 한글 조합 중 Enter는 무시
+      $(id).onkeydown = (ev) => { if (ev.key === "Enter" && !ev.isComposing) save(); };
+    }
     right.querySelector(".btn-row").onclick = (ev) => {
       const a = ev.target.closest("[data-act]")?.dataset.act;
       const cur = detail.episodes.find((x) => x.index === sel);
@@ -519,12 +558,13 @@ function dataPage(el) {
         if (cur.result && !confirm(`현재 ${KO[cur.result][0]}입니다. ${KO[a][1]} 변경할까요?`)) return;
         label({ result: a });
       }
-      if (a === "keep") label({ keep: true, deleted: false });
-      if (a === "delete") label({ deleted: true });
+      // 학습 활용과 삭제 표시는 다시 누르면 해제
+      if (a === "keep") label({ keep: !cur.keep }).then((ok) => ok && toast(cur.keep ? "학습 활용을 해제했습니다" : "학습에 활용합니다"));
+      if (a === "delete") label({ deleted: !cur.deleted }).then((ok) => ok && toast(cur.deleted ? "삭제 표시를 해제했습니다" : "삭제 표시했습니다"));
       if (a === "next") {
         const i = detail.episodes.findIndex((x) => x.index === sel);
         const nxt = detail.episodes[i - 1] ?? detail.episodes[detail.episodes.length - 1];
-        select(nxt.index, true);
+        pick(nxt.index);
       }
     };
 
