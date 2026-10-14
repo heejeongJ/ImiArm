@@ -19,6 +19,8 @@ import store
 JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
 HISTORY_S = 10
 HOMING_S = 2.0
+READ_FAIL_LIMIT = 10  # 연속 읽기 실패 허용 횟수, 30프레임 기준 약 0.3초
+SLOW_LOG_S = 5  # 제어 주기 지연 경고 최소 간격
 log = logging.getLogger("metarobo")
 
 
@@ -101,6 +103,7 @@ class Rig:
         self.policy_info = {}
         self._homing = None
         self._halt = False
+        self._fails = {}  # 장치별 연속 읽기 실패 횟수
         self._q = queue.Queue()
         self._stop = threading.Event()
         self._thread = None
@@ -111,12 +114,16 @@ class Rig:
             raise Busy("이미 연결되어 있습니다")
         self.error = ""
         self.mode = "connecting"
+        self._fails = {}
+        log.info("장치 연결 시작" + (" (모의 장치)" if self.mock else ""))
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="rig", daemon=True)
         self._thread.start()
 
     def disconnect(self):
         """제어 스레드 종료 후 대기"""
+        if self.mode != "off":
+            log.info("장치 연결 해제 요청")
         self._stop.set()
         if self._thread and self._thread is not threading.current_thread():
             self._thread.join(timeout=30)
@@ -135,8 +142,11 @@ class Rig:
         robot = SO101Follower(SO101FollowerConfig(port=C.FOLLOWER_PORT, id=C.FOLLOWER_ID, cameras=cams))
         leader = SO101Leader(SO101LeaderConfig(port=C.LEADER_PORT, id=C.LEADER_ID))
         # calibrate=False: 캘리브레이션이 없으면 input() 대기 대신 화면에 알림
+        log.info("리더 연결 중 (%s)", C.LEADER_PORT)
         leader.connect(calibrate=False)
         self.leader = leader
+        log.info("팔로워와 카메라 연결 중 (%s, 카메라 %s)", C.FOLLOWER_PORT,
+                 ", ".join(f"{n}={i}" for n, i in C.CAMERAS.items()))
         robot.connect(calibrate=False)
         self.robot = robot
         missing = [n for n, d in (("팔로워", robot), ("리더", leader)) if not d.is_calibrated]
@@ -150,13 +160,25 @@ class Rig:
             obs = self.robot.get_observation()
             self.home = {f"{j}.pos": float(obs[f"{j}.pos"]) for j in JOINTS}
             self.mode = "idle"
+            log.info("장치 연결 완료, 대기 모드")
             period = 1 / C.FPS
             tick = 0
+            slow, slow_max, slow_t = 0, 0.0, time.time()
             while not self._stop.is_set():
                 t0 = time.perf_counter()
                 self._tick(tick, t0)
                 tick += 1
-                time.sleep(max(0.0, period - (time.perf_counter() - t0)))
+                elapsed = time.perf_counter() - t0
+                # 제어 주기 지연 집계, SLOW_LOG_S마다 한 번 경고
+                if elapsed > 2 * period:
+                    slow, slow_max = slow + 1, max(slow_max, elapsed)
+                if slow and time.time() - slow_t >= SLOW_LOG_S:
+                    log.warning("제어 주기 지연 %d회, 최대 %.0fms (기준 %.0fms)", slow, slow_max * 1000, period * 1000)
+                    slow, slow_max, slow_t = 0, 0.0, time.time()
+                time.sleep(max(0.0, period - elapsed))
+        except Busy as e:
+            log.error("장치 세션 중단: %s", e)
+            self.error = str(e)
         except Exception as e:
             log.exception("장치 세션 오류")
             self.error = str(e) or type(e).__name__
@@ -182,6 +204,7 @@ class Rig:
             _, fut = self._q.get_nowait()
             fut.set_exception(Busy("장치 연결이 끊겼습니다"))
         self.mode = "off"
+        log.info("장치 연결 해제됨")
 
     def call(self, fn, timeout=60):
         """제어 스레드에서 fn 실행 후 결과 반환"""
@@ -190,6 +213,22 @@ class Rig:
         fut = Future()
         self._q.put((fn, fut))
         return fut.result(timeout=timeout)
+
+    def _read(self, name, fn):
+        """장치 읽기, 일시 실패는 None 반환, 연속 READ_FAIL_LIMIT회 실패 시 예외 전달"""
+        try:
+            value = fn()
+        except OSError as e:
+            n = self._fails.get(name, 0) + 1
+            self._fails[name] = n
+            if n >= READ_FAIL_LIMIT:
+                log.error("%s 읽기 연속 %d회 실패, 연결 종료", name, n)
+                raise
+            log.warning("%s 읽기 실패 (연속 %d회): %s", name, n, e)
+            return None
+        if self._fails.get(name):
+            log.info("%s 읽기 회복 (연속 %d회 실패 후)", name, self._fails.pop(name))
+        return value
 
     def _tick(self, tick, t0):
         """제어 주기 1회: 요청 처리, 관측, 동작 결정과 전송, 녹화, 화면용 데이터 갱신"""
@@ -201,12 +240,16 @@ class Rig:
             except Exception as e:
                 fut.set_exception(e)
 
-        obs = self.robot.get_observation()
+        # 읽기 일시 실패 시 이번 주기 건너뛰기
+        obs = self._read("팔로워", self.robot.get_observation)
+        if obs is None:
+            return
         actual = {j: float(obs[f"{j}.pos"]) for j in JOINTS}
 
         # 비상 정지: 녹화와 정책 중단 후 현재 자세로 고정
         if self._halt:
             self._halt = False
+            log.warning("비상 정지: 녹화 폐기, 현재 자세 고정")
             self._stop_recording(discard=True)
             self.policy = None
             self.mode = "idle"
@@ -215,7 +258,7 @@ class Rig:
         # 모드별 목표 동작 결정
         action, infer_ms = None, None
         if self.mode == "teleop":
-            action = self.leader.get_action()
+            action = self._read("리더", self.leader.get_action)
         elif self.mode == "policy":
             s = time.perf_counter()
             action = self.policy(obs)
@@ -224,6 +267,7 @@ class Rig:
             if time.time() - self.policy_info["t0"] >= C.EPISODE_TIME_S:
                 self.policy_info["timed_out"] = True
                 self.mode = "idle"
+                log.info("정책 실행 %d초 경과로 정지 (%d스텝)", C.EPISODE_TIME_S, self.policy_info["steps"])
         elif self.mode == "homing":
             action = self._homing_step()
         if action is not None:
@@ -247,6 +291,7 @@ class Rig:
             self.rec["frames"] += 1
             if time.time() - self.rec["t0"] >= C.EPISODE_TIME_S:
                 self.rec["state"] = "pending"
+                log.info("녹화 %d초 경과, 결과 대기 (%d프레임)", C.EPISODE_TIME_S, self.rec["frames"])
 
         # 화면 스트리밍용 JPEG 갱신 (2틱마다)
         if tick % 2 == 0:
@@ -285,11 +330,13 @@ class Rig:
         a = min(1.0, (time.time() - h["t0"]) / HOMING_S)
         if a >= 1.0:
             self.mode = "idle"
+            log.info("시작 자세 복귀 완료")
         return {k: h["from"][k] + (h["to"][k] - h["from"][k]) * a for k in h["to"]}
 
     def estop(self):
         """정책, 텔레옵, 녹화를 멈추고 지금 자세 유지, 녹화 중이던 에피소드는 폐기"""
         if self.mode not in ("off", "connecting"):
+            log.warning("비상 정지 요청 (%s)", self.mode)
             self._halt = True
 
     def set_teleop(self, on):
@@ -298,12 +345,15 @@ class Rig:
             if on:
                 if self.mode not in ("idle", "teleop"):
                     raise Busy("정책 실행 중에는 텔레옵을 시작할 수 없습니다")
+                if self.mode != "teleop":
+                    log.info("텔레옵 시작")
                 self.mode = "teleop"
             else:
                 self._stop_recording(discard=True)
                 self._close_dataset()
                 if self.mode == "teleop":
                     self.mode = "idle"
+                    log.info("텔레옵 종료")
         self.call(fn)
 
     def record_start(self, task):
@@ -321,6 +371,7 @@ class Rig:
             self.error = ""
             self.mode = "teleop"
             self.rec = {"state": "recording", "t0": time.time(), "frames": 0, "task": task}
+            log.info('녹화 시작: 에피소드 %d, 작업 "%s"', self.dataset.meta.total_episodes, task)
         self.call(fn, timeout=120)
 
     def record_finish(self, result):
@@ -335,8 +386,12 @@ class Rig:
                 self._stop_recording(discard=True)
                 raise Busy("기록된 프레임이 없어 버렸습니다")
             idx = self.dataset.meta.total_episodes
-            length = self.rec["frames"] / C.FPS
+            frames = self.rec["frames"]
+            length = frames / C.FPS
+            log.info("에피소드 %d 저장 중 (%s, %d프레임, %.1f초)", idx, result, frames, length)
+            s = time.perf_counter()
             self.dataset.save_episode()
+            log.info("에피소드 %d 저장 완료 (%.1f초 소요)", idx, time.perf_counter() - s)
             self.rec = None
             store.set_label(self.dataset.repo_id, idx, result=result)
             self.last_saved = {"index": idx, "result": result, "length_s": length}
@@ -357,7 +412,9 @@ class Rig:
         kw = dict(root=root, image_writer_threads=4 * len(C.CAMERAS), streaming_encoding=True, encoder_threads=2)
         if (root / "meta" / "info.json").exists():
             self.dataset = LeRobotDataset.resume(repo, **kw)
+            log.info("데이터셋 이어 쓰기: %s (기존 %d개)", repo, self.dataset.meta.total_episodes)
         else:
+            log.info("데이터셋 새로 생성: %s", repo)
             features = {**hw_to_dataset_features(self.robot.action_features, ACTION),
                         **hw_to_dataset_features(self.robot.observation_features, OBS_STR)}
             self.dataset = LeRobotDataset.create(repo, C.FPS, features=features, robot_type=self.robot.name, **kw)
@@ -365,6 +422,7 @@ class Rig:
     def _stop_recording(self, discard):
         """녹화 상태 해제, discard면 에피소드 버퍼 폐기"""
         if self.rec and discard and self.dataset is not None:
+            log.info("녹화 중이던 에피소드 폐기 (%d프레임)", self.rec["frames"])
             self.dataset.clear_episode_buffer()
         self.rec = None
 
@@ -373,6 +431,7 @@ class Rig:
         self._stop_recording(discard=True)
         if self.dataset is not None:
             ds, self.dataset = self.dataset, None
+            log.info("데이터셋 마무리: %s", ds.repo_id)
             ds.finalize()
 
     def load_policy(self, path):
@@ -392,6 +451,7 @@ class Rig:
         path = str(store.ROOT / path)
         # CUDA 없으면 CPU 추론
         device = C.DEVICE if (C.DEVICE != "cuda" or torch.cuda.is_available()) else "cpu"
+        log.info("정책 로드: %s (%s)", path, device)
         cfg = PreTrainedConfig.from_pretrained(path)
         cfg.pretrained_path = path
         cfg.device = device
@@ -430,17 +490,21 @@ class Rig:
             self.policy = fn
             self.policy_info = {"t0": time.time(), "steps": 0, "task": task, "timed_out": False}
             self.mode = "policy"
+            log.info('정책 실행 시작: "%s"', task)
         self.call(go)
 
     def stop_policy(self, go_home=True):
         """정책 중지, go_home이면 시작 자세로 복귀"""
         def fn():
             self.policy = None
+            if self.mode == "policy":
+                log.info("정책 중지 (%d스텝)", self.policy_info["steps"])
             if self.mode in ("policy", "idle", "homing"):
                 if go_home and self.home and self.hist:
                     cur = {f"{j}.pos": v for j, v in self.hist[-1]["actual"].items()}
                     self._homing = {"t0": time.time(), "from": cur, "to": dict(self.home)}
                     self.mode = "homing"
+                    log.info("시작 자세로 복귀 중")
                 else:
                     self.mode = "idle"
         self.call(fn)
