@@ -442,9 +442,20 @@ function dataPage(el) {
     $("#ds-left tbody").onkeydown = (e) => { const tr = e.target.closest("tr[data-ep]"); if (tr && e.key === "Enter") select(+tr.dataset.ep, true); };
   }
 
-  // 라벨 저장 후 다시 불러오기
+  // 라벨 저장 후 다시 불러오기, 저장 성공 여부 반환
   async function label(fields) {
-    if (await act("/api/label", { repo, ep: sel, ...fields })) await load();
+    const ok = await act("/api/label", { repo, ep: sel, ...fields });
+    if (ok) await load();
+    return ok;
+  }
+
+  // 현재 결과와 유지 여부를 버튼 강조로 표시
+  function paintLabel(e) {
+    for (const [a, on] of [["success", e.result === "success"], ["fail", e.result === "fail"], ["keep", e.keep]]) {
+      const b = $(`#ds-right [data-act="${a}"]`);
+      b.classList.toggle("primary", on);
+      b.setAttribute("aria-pressed", on);
+    }
   }
 
   // 에피소드 선택, 영상/그래프/라벨 표시
@@ -457,6 +468,7 @@ function dataPage(el) {
     if (!reloadMedia && right.dataset.ep === String(idx)) {
       $("#ep-pos").value = e.position;
       $("#ep-memo").value = e.memo;
+      paintLabel(e);
       return;
     }
     right.dataset.ep = String(idx);
@@ -486,19 +498,28 @@ function dataPage(el) {
         <div class="field"><label for="ep-memo">메모</label><input id="ep-memo" class="input" value="${esc(e.memo)}" placeholder="예: 들어 올리다 놓침"></div>
       </div>
       <div class="btn-row">
-        <button class="btn primary" data-act="keep" type="button">데이터에 유지</button>
-        <button class="btn" data-act="flip" type="button">결과 변경</button>
+        <button class="btn" data-act="success" type="button">성공</button>
+        <button class="btn" data-act="fail" type="button">실패</button>
+        <button class="btn" data-act="keep" type="button">데이터에 유지</button>
         <button class="btn" data-act="delete" type="button">삭제 표시</button>
         <button class="btn" data-act="next" type="button">다음 에피소드</button>
       </div>`;
+    paintLabel(e);
 
-    $("#ep-pos").onchange = (ev) => label({ position: ev.target.value });
-    $("#ep-memo").onchange = (ev) => label({ memo: ev.target.value });
+    // 물체 위치와 메모는 결과와 별개로 바로 저장
+    $("#ep-pos").onchange = async (ev) => { if (await label({ position: ev.target.value })) toast("물체 위치를 저장했습니다"); };
+    $("#ep-memo").onchange = async (ev) => { if (await label({ memo: ev.target.value })) toast("메모를 저장했습니다"); };
     right.querySelector(".btn-row").onclick = (ev) => {
       const a = ev.target.closest("[data-act]")?.dataset.act;
       const cur = detail.episodes.find((x) => x.index === sel);
+      // 같은 결과는 무시, 이미 정한 결과를 뒤집을 때만 확인
+      if (a === "success" || a === "fail") {
+        const KO = { success: ["성공", "성공으로"], fail: ["실패", "실패로"] };
+        if (cur.result === a) return;
+        if (cur.result && !confirm(`현재 ${KO[cur.result][0]}입니다. ${KO[a][1]} 변경할까요?`)) return;
+        label({ result: a });
+      }
       if (a === "keep") label({ keep: true, deleted: false });
-      if (a === "flip") label({ result: cur.result === "success" ? "fail" : "success" });
       if (a === "delete") label({ deleted: true });
       if (a === "next") {
         const i = detail.episodes.findIndex((x) => x.index === sel);
