@@ -209,15 +209,17 @@ def make_handler(app):
             self.end_headers()
             self.wfile.write(body)
 
-        def _call(self, fn, arg):
+        def _call(self, fn, arg, path):
             """라우트 실행, 예외를 상태 코드로 변환 (Busy 409, 잘못된 요청 400, 그 외 500)"""
             try:
                 r = fn(arg)
                 # 반환값 없는 명령도 화면에서 성공으로 판단하도록 빈 객체 응답
                 self._json(200, _clean({} if r is None else r))
             except Busy as e:
+                log.warning("요청 거부 %s: %s", path, e)
                 self._json(409, {"error": str(e)})
             except (KeyError, ValueError, FileNotFoundError) as e:
+                log.warning("잘못된 요청 %s: %s", path, e)
                 self._json(400, {"error": f"잘못된 요청: {e}"})
             except Exception as e:
                 log.error(traceback.format_exc())
@@ -228,7 +230,7 @@ def make_handler(app):
             u = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
             if u.path in get_routes:
-                return self._call(get_routes[u.path], q)
+                return self._call(get_routes[u.path], q, u.path)
             if u.path.startswith("/cam/"):
                 return self._mjpeg(u.path[5:])
             if u.path == "/video":
@@ -254,7 +256,8 @@ def make_handler(app):
                 body = json.loads(self.rfile.read(n) or b"{}")
             except json.JSONDecodeError:
                 return self._json(400, {"error": "JSON이 아닙니다"})
-            self._call(post_routes[u.path], body)
+            log.info("명령 %s %s", u.path, json.dumps(body, ensure_ascii=False) if body else "")
+            self._call(post_routes[u.path], body, u.path)
 
         def _file(self, path):
             """파일 응답, 브라우저 영상 탐색용 Range 요청 처리"""
@@ -334,6 +337,11 @@ def serve(mock=False, host="127.0.0.1", port=None):
     httpd = ThreadingHTTPServer((host, port), make_handler(app))
     httpd.daemon_threads = True
     print(f"metarobo: http://localhost:{port}" + ("  (모의 장치)" if mock else ""), flush=True)
+    # 실행 설정 요약
+    if not mock:
+        log.info("팔로워 %s, 리더 %s, 카메라 %s, %d프레임", C.FOLLOWER_PORT, C.LEADER_PORT,
+                 ", ".join(f"{n}={i}" for n, i in C.CAMERAS.items()), C.FPS)
+    log.info("녹화 데이터셋 %s, 에피소드 %d초", store.record_repo(mock), C.EPISODE_TIME_S)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

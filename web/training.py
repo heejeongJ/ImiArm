@@ -1,5 +1,6 @@
 """lerobot-train 하위 프로세스 실행과 로그 파싱"""
 import json
+import logging
 import os
 import re
 import subprocess
@@ -14,6 +15,7 @@ from rig import Busy
 
 LOG_FREQ = 100
 METRIC = re.compile(r"(\w+(?:/s)?):(\S+)")
+log = logging.getLogger("metarobo")
 TQDM = re.compile(r"Training:.*?\|\s*(\d+)/\d+\s*\[[^<\]]*<([\d:]+)")  # "Training: 6%|..| 12/200 [00:30<07:41, ..]"
 
 
@@ -89,6 +91,8 @@ class Trainer:
             env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
         )
         self.state = "running"
+        log.info("학습 시작: %s", run)
+        log.info(self.tail[0])
         threading.Thread(target=self._read, args=(self.proc, out), daemon=True).start()
 
     def _read(self, proc, out):
@@ -116,18 +120,25 @@ class Trainer:
             except (KeyError, ValueError):
                 continue
             self.rows.append(row)
+            log.info("학습 %s 스텝 %d/%d, 손실 %.4f", self.run, row["step"], self.total, row["loss"])
             out.mkdir(parents=True, exist_ok=True)
             with open(out / "metarobo_log.jsonl", "a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
         code = proc.wait()
         if self.state == "running":
             self.state = "done" if code == 0 else "failed"
+        # 실패 시 마지막 출력 함께 기록
+        if self.state == "failed":
+            log.error("학습 실패: %s (종료 코드 %d)\n%s", self.run, code, "\n".join(list(self.tail)[-10:]))
+        else:
+            log.info("학습 종료: %s (%s, 종료 코드 %d)", self.run, self.state, code)
 
     def stop(self):
         """학습 프로세스 강제 종료"""
         if not self.proc or self.proc.poll() is not None:
             raise Busy("진행 중인 학습이 없습니다")
         self.state = "stopped"
+        log.info("학습 중단 요청: %s", self.run)
         if sys.platform == "win32":  # 데이터로더 워커까지 함께 종료
             subprocess.call(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

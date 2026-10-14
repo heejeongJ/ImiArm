@@ -1,10 +1,13 @@
 """실물 평가 세션"""
+import logging
 import threading
 import time
 
 import config as C
 import store
 from rig import Busy
+
+log = logging.getLogger("metarobo")
 
 
 class Evaluation:
@@ -25,14 +28,18 @@ class Evaluation:
             raise Busy("조작 화면에서 장치를 먼저 연결하세요")
         self.end()
         self.loading, self.error = True, ""
+        log.info("평가 모델 로드 시작: %s", checkpoint)
 
         def load():
             """정책 로드와 세션 생성"""
+            t0 = time.time()
             try:
                 self.policy = self.rig.load_policy(checkpoint)
                 self.session = store.new_eval(checkpoint, label)
                 self.session["task"] = task
+                log.info("평가 모델 로드 완료 (%.1f초)", time.time() - t0)
             except Exception as e:
+                log.exception("평가 모델 로드 실패")
                 self.error = f"모델을 읽지 못했습니다: {e}"
             finally:
                 self.loading = False
@@ -52,6 +59,7 @@ class Evaluation:
             raise Busy("모든 위치를 평가했습니다")
         self.rig.run_policy(self.policy, self.session["task"])
         self.trial_t0 = time.time()
+        log.info("평가 회차 %d/%d 시작", len(self.session["trials"]) + 1, C.EVAL_GRID[0] * C.EVAL_GRID[1])
 
     def finish_trial(self, success, reason):
         """회차 결과 기록 후 시작 자세로 복귀"""
@@ -63,6 +71,8 @@ class Evaluation:
         self.rig.stop_policy(go_home=True)
         trial = {"pos": len(self.session["trials"]), "success": success, "reason": reason.strip(),
                  "duration_s": round(duration, 1)}
+        log.info("평가 회차 %d 결과: %s (%.1f초)%s", trial["pos"] + 1, "성공" if success else "실패",
+                 duration, f", {trial['reason']}" if trial["reason"] else "")
         task = self.session.get("task")
         self.session = store.add_trial(self.session["id"], trial)
         self.session["task"] = task
@@ -71,6 +81,8 @@ class Evaluation:
         """평가 세션 종료, 실행 중인 정책 중지"""
         if self.trial_t0 is not None and self.rig.mode == "policy":
             self.rig.stop_policy(go_home=False)
+        if self.session:
+            log.info("평가 종료 (%d회차 기록)", len(self.session["trials"]))
         self.session, self.policy, self.trial_t0 = None, None, None
 
     def status(self):
