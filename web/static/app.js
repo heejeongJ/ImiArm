@@ -535,7 +535,13 @@ function dataPage(el) {
         setPlayIcon(false);
       }
     };
-    $("#ep-seek").oninput = (ev) => seekTo(+ev.target.value);
+    // 슬라이더를 누르고 있는 동안만 재생 위치 반영 중지
+    let dragging = false;
+    const seek = $("#ep-seek");
+    seek.oninput = (ev) => seekTo(+ev.target.value);
+    seek.onpointerdown = () => (dragging = true);
+    // 슬라이더 밖에서 놓아도 change로 해제
+    seek.onpointerup = seek.onpointercancel = seek.onchange = () => (dragging = false);
     // 재생 위치를 슬라이더와 그래프 세로선에 반영
     const frame = () => {
       if (vids.length) {
@@ -546,7 +552,7 @@ function dataPage(el) {
           t = e.length_s;
         }
         t = Math.max(0, t);
-        if (document.activeElement !== $("#ep-seek")) $("#ep-seek").value = t;
+        if (!dragging) seek.value = t;
         $("#ep-time").textContent = `${t.toFixed(1)}초 / ${sec(e.length_s)}`;
         const x = (t / e.length_s) * 600;
         $("#sig-head").setAttribute("x1", x);
