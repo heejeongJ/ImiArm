@@ -469,15 +469,33 @@ function dataPage(el) {
     return ok;
   }
 
-  // 현재 결과, 학습 활용, 삭제 표시를 버튼 강조로 표시, 학습 활용은 실패에서만 노출
+  // 결과 세그먼트, 학습 활용 체크, 삭제 표시 상태 반영, 학습 활용은 실패에서만 노출
   function paintLabel(e) {
-    for (const [a, on] of [["success", e.result === "success"], ["fail", e.result === "fail"], ["keep", e.keep], ["delete", e.deleted]]) {
+    for (const a of ["success", "fail"]) {
       const b = $(`#ds-right [data-act="${a}"]`);
-      b.classList.toggle("primary", on);
-      b.setAttribute("aria-pressed", on);
+      b.classList.toggle("on", e.result === a);
+      b.setAttribute("aria-pressed", e.result === a);
     }
-    $('#ds-right [data-act="keep"]').hidden = e.result !== "fail";
-    $("#ep-save").disabled = !dirty();
+    $("#ep-keep").checked = e.keep;
+    $("#ep-keep-wrap").hidden = e.result !== "fail";
+    const del = $('#ds-right [data-act="delete"]');
+    del.classList.toggle("on", e.deleted);
+    del.setAttribute("aria-pressed", e.deleted);
+    del.lastChild.textContent = e.deleted ? "삭제 표시됨" : "삭제 표시";
+    paintSave();
+  }
+
+  // 고친 내용이 있으면 내용 변경 버튼 강조와 저장 안 됨 표시
+  function paintSave() {
+    const d = dirty();
+    $("#ep-save").classList.toggle("primary", d);
+    $("#ep-save").classList.toggle("quiet", !d);
+    $("#ep-dirty").hidden = !d;
+  }
+
+  // 에피소드 번호 기준 이전·다음, 끝이면 비활성
+  function neighbor(step) {
+    return detail.episodes.find((x) => x.index === sel + step);
   }
 
   // 에피소드 선택, 영상/그래프/라벨 표시
@@ -503,7 +521,13 @@ function dataPage(el) {
     cancelAnimationFrame(raf);
     vids.length = 0;
     right.innerHTML = `
-      <div class="between"><div class="title">에피소드 ${pad3(idx)}</div><div class="sub">${esc(e.task)}</div></div>
+      <div class="between" style="align-items:flex-start">
+        <div style="min-width:0"><div class="title">에피소드 ${pad3(idx)}</div><div class="sub">${esc(e.task)}</div></div>
+        <div class="ep-nav">
+          <button class="btn sm" data-nav="-1" type="button" ${neighbor(-1) ? "" : "disabled"}>‹ 이전</button>
+          <button class="btn sm" data-nav="1" type="button" ${neighbor(1) ? "" : "disabled"}>다음 ›</button>
+        </div>
+      </div>
       <div class="row" style="gap:14px">${detail.video_keys.map((k) => `
         <div style="flex:1 1 260px;min-width:0"><div class="note" style="margin-bottom:6px">${esc(k.replace("observation.images.", "카메라 "))}</div>
         <div class="media" style="height:250px"><video muted playsinline preload="auto" data-key="${esc(k)}"></video></div></div>`).join("")}</div>
@@ -521,34 +545,49 @@ function dataPage(el) {
           <line id="sig-head" x1="0" x2="0" y1="0" y2="110" stroke="#2563EB" stroke-width="2" vector-effect="non-scaling-stroke"/>
         </svg>
       </div>
-      <div class="grid2">
-        <div class="field"><label for="ep-pos">물체 위치</label><input id="ep-pos" class="input" value="${esc(e.position)}" placeholder="예: 왼쪽 앞"></div>
-        <div class="field"><label for="ep-memo">메모</label><input id="ep-memo" class="input" value="${esc(e.memo)}" placeholder="예: 들어 올리다 놓침"></div>
+      <div class="label-row" id="ep-label">
+        <span class="row-label">결과</span>
+        <div class="seg" role="group" aria-label="결과">
+          <button data-act="success" type="button">성공</button>
+          <button data-act="fail" type="button">실패</button>
+        </div>
+        <label class="check" id="ep-keep-wrap"><input type="checkbox" id="ep-keep"> 학습 활용</label>
+        <button class="text-btn" data-act="delete" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg><span>삭제 표시</span></button>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:-6px">
-        <button class="btn" id="ep-save" type="button" disabled>내용 변경</button>
-      </div>
-      <div class="btn-row">
-        <button class="btn" data-act="success" type="button">성공</button>
-        <button class="btn" data-act="fail" type="button">실패</button>
-        <button class="btn" data-act="keep" type="button">학습 활용</button>
-        <button class="btn" data-act="delete" type="button">삭제 표시</button>
-        <button class="btn" data-act="next" type="button">다음 에피소드</button>
+      <div class="label-row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="label-field"><label class="row-label" for="ep-pos">물체 위치</label><input id="ep-pos" class="input" value="${esc(e.position)}" placeholder="예: 왼쪽 앞"></div>
+        <div class="label-field"><label class="row-label" for="ep-memo">메모</label><input id="ep-memo" class="input" value="${esc(e.memo)}" placeholder="예: 들어 올리다 놓침"></div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px">
+          <span class="dirty-note" id="ep-dirty" hidden>저장 안 됨</span>
+          <button class="btn sm" id="ep-save" type="button">내용 변경</button>
+        </div>
       </div>`;
     paintLabel(e);
 
     // 물체 위치와 메모는 내용 변경 버튼으로만 함께 저장, 결과는 그대로
     const save = async () => {
-      if (!dirty()) return;
+      if (!dirty()) return toast("바뀐 내용이 없습니다");
       if (await label({ position: $("#ep-pos").value, memo: $("#ep-memo").value })) toast("내용을 저장했습니다");
     };
     $("#ep-save").onclick = save;
     for (const id of ["#ep-pos", "#ep-memo"]) {
-      $(id).oninput = () => ($("#ep-save").disabled = !dirty());
+      $(id).oninput = paintSave;
       // 한글 조합 중 Enter는 무시
       $(id).onkeydown = (ev) => { if (ev.key === "Enter" && !ev.isComposing) save(); };
     }
-    right.querySelector(".btn-row").onclick = (ev) => {
+    // 이전·다음 에피소드 이동
+    right.querySelector(".ep-nav").onclick = (ev) => {
+      const b = ev.target.closest("[data-nav]");
+      const to = b && neighbor(+b.dataset.nav);
+      if (to) pick(to.index);
+    };
+    // 학습 활용은 다시 누르면 해제
+    $("#ep-keep").onchange = async (ev) => {
+      const on = ev.target.checked;
+      if (await label({ keep: on })) toast(on ? "학습에 활용합니다" : "학습 활용을 해제했습니다");
+      else ev.target.checked = !on;
+    };
+    $("#ep-label").onclick = (ev) => {
       const a = ev.target.closest("[data-act]")?.dataset.act;
       const cur = detail.episodes.find((x) => x.index === sel);
       // 같은 결과는 무시, 이미 정한 결과를 뒤집을 때만 확인
@@ -558,14 +597,8 @@ function dataPage(el) {
         if (cur.result && !confirm(`현재 ${KO[cur.result][0]}입니다. ${KO[a][1]} 변경할까요?`)) return;
         label({ result: a });
       }
-      // 학습 활용과 삭제 표시는 다시 누르면 해제
-      if (a === "keep") label({ keep: !cur.keep }).then((ok) => ok && toast(cur.keep ? "학습 활용을 해제했습니다" : "학습에 활용합니다"));
+      // 삭제 표시는 다시 누르면 해제
       if (a === "delete") label({ deleted: !cur.deleted }).then((ok) => ok && toast(cur.deleted ? "삭제 표시를 해제했습니다" : "삭제 표시했습니다"));
-      if (a === "next") {
-        const i = detail.episodes.findIndex((x) => x.index === sel);
-        const nxt = detail.episodes[i - 1] ?? detail.episodes[detail.episodes.length - 1];
-        pick(nxt.index);
-      }
     };
 
     // v3 데이터셋은 한 영상 파일에 여러 에피소드가 이어 붙은 구조

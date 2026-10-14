@@ -64,6 +64,21 @@ nav a.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
 .seg.wide{font-size:14px}
 .seg.wide button{flex:1 1 0;min-height:40px}
 
+.btn.sm{height:36px;padding:0 12px;font-size:13px}
+.btn.quiet{background:var(--bg);color:var(--text-2)}
+.btn.quiet:hover:not(:disabled){background:var(--line)}
+.ep-nav{display:flex;gap:6px;flex:none}
+.label-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.row-label{width:64px;flex:none;font-size:13px;color:var(--muted)}
+.label-field{display:flex;align-items:center;gap:12px}
+.label-field .input{flex:1 1 auto;min-width:0}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--text)}
+.check input{width:16px;height:16px;accent-color:var(--blue)}
+.text-btn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:6px;font-size:13px;color:var(--muted)}
+.text-btn:hover{background:var(--bg)}
+.text-btn.on{color:var(--red);background:var(--red-soft)}
+.dirty-note{font-size:12px;color:#B45309}
+
 .table-wrap{overflow-x:auto}
 table.tbl{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
 .tbl th{font-weight:500;color:var(--muted);font-size:12px;padding:9px 16px 9px 0;background:var(--field)}
