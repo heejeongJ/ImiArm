@@ -9,6 +9,7 @@ from rig import JOINTS, Busy
 
 FULL_TURN = "wrist_roll"
 NARROW_DEG = 90  # 이보다 좁게 기록된 관절은 끝까지 움직이지 않은 것으로 판단
+MOVED_DEG = 5  # 이보다 좁으면 아직 손대지 않은 관절로 판단
 
 
 def ticks_to_deg(v):
@@ -155,6 +156,7 @@ class Calibration:
                 row["state"] = "전체 회전"
             elif self.step >= 2 and j in self.mins:
                 row["min"], row["max"] = ticks_to_deg(self.mins[j]), ticks_to_deg(self.maxes[j])
-                row["state"] = "범위 좁음" if row["max"] - row["min"] < NARROW_DEG else "기록됨"
+                span = row["max"] - row["min"]
+                row["state"] = "미기록" if span < MOVED_DEG else "범위 좁음" if span < NARROW_DEG else "기록됨"
             joints.append(row)
         return {"arm": self.arm, "step": self.step, "error": self.error, "joints": joints}

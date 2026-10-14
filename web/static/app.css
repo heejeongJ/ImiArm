@@ -78,6 +78,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
 .tbl tr.sel td{background:var(--blue-soft)}
 .tbl tr.sel td:first-child{color:var(--blue)}
 .tbl tr.dim td{color:var(--gray-line)}
+.tbl tr.done td{background:var(--blue-soft)}
 
 .media{position:relative;height:270px;background:var(--media);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;overflow:hidden}
 .media img,.media video{width:100%;height:100%;object-fit:contain;background:#111827}
@@ -111,6 +112,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
 .kv>div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--grid)}
 .kv>div:last-child{border-bottom:0}
 .kv span:first-child{color:var(--muted)}
+.jchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.jchip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:13px;background:var(--bg);color:var(--text-2);font-size:12px;font-weight:600}
+.jchip.narrow{background:var(--blue-soft);color:var(--blue)}
+.jchip.ok{background:var(--blue);color:#fff}
 .range{position:relative;height:16px}
 .range .track{position:absolute;left:0;right:0;top:5px;height:6px;background:var(--grid);border-radius:3px}
 .range .fill{position:absolute;top:5px;height:6px;background:var(--blue);border-radius:3px}
