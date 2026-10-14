@@ -352,8 +352,10 @@ class Rig:
         from lerobot.utils.feature_utils import hw_to_dataset_features
 
         repo = store.record_repo(self.mock)
-        kw = dict(image_writer_threads=4 * len(C.CAMERAS), streaming_encoding=True, encoder_threads=2)
-        if (store.lerobot_home() / repo / "meta" / "info.json").exists():
+        # resume()은 root 필수, create()도 같은 폴더로 고정
+        root = store.lerobot_home() / repo
+        kw = dict(root=root, image_writer_threads=4 * len(C.CAMERAS), streaming_encoding=True, encoder_threads=2)
+        if (root / "meta" / "info.json").exists():
             self.dataset = LeRobotDataset.resume(repo, **kw)
         else:
             features = {**hw_to_dataset_features(self.robot.action_features, ACTION),
