@@ -693,8 +693,10 @@ function trainPage(el) {
     </div>
     <div class="col" style="flex:999 1 600px">
       <section class="card stack">
+        <div id="t-run" hidden></div>
         <div class="row" style="gap:12px 48px" id="t-summary"></div>
         <div class="progress" style="height:6px"><div id="t-bar" style="width:0"></div></div>
+        <div class="note" id="t-stage" hidden></div>
       </section>
       <section class="card">
         <div class="card-head"><div class="title">손실 곡선</div><div class="note">세로축은 로그 눈금</div></div>
@@ -743,6 +745,32 @@ function trainPage(el) {
     $("#t-start").disabled = running || !datasets.length;
     $("#t-stop").disabled = !running;
     $$("#t-policy,#t-repo,#t-steps,#t-batch,#t-lr,#t-save").forEach((i) => (i.disabled = running));
+    // 학습 중에는 설정 칸을 실제 실행 값으로 고정
+    const p = s.params;
+    if (running) {
+      $("#t-policy").value = p.policy;
+      $("#t-repo").value = p.repo;
+      $("#t-steps").value = p.steps;
+      $("#t-batch").value = p.batch;
+      $("#t-lr").value = p.lr;
+      $("#t-save").value = p.save_freq;
+      repoNote();
+    }
+    // 실행 요약 줄, 학습 중이거나 이번 서버 실행에서 끝난 학습
+    $("#t-run").hidden = !s.run;
+    if (s.run) {
+      const used = p.episodes != null ? `에피소드 ${p.episodes}개 사용 (${p.excluded}개 제외)` : `${p.excluded}개 제외`;
+      $("#t-run").innerHTML = `<span class="stat-label">${running ? "현재 학습" : "마지막 학습"}</span>
+        <span style="font-weight:600;margin-left:8px">${esc(POLICY_KO[p.policy] ?? p.policy)}, ${esc(p.repo)}, ${used}, ${p.device === "cpu" ? "CPU" : "GPU"}</span>`;
+    }
+    // 첫 기록 전 준비 단계와 경과 시간
+    const preparing = running && !s.recent.length && !s.step;
+    $("#t-stage").hidden = !preparing;
+    if (preparing) {
+      const el = Math.round(s.elapsed_s ?? 0);
+      $("#t-stage").textContent = `${s.stage ?? "준비 중"}, ${el >= 60 ? `${Math.floor(el / 60)}분 ` : ""}${el % 60}초 경과. 첫 기록은 ${num(s.log_freq)}스텝에서 나옵니다.`;
+      if (!$("#t-log-wrap").dataset.prepOpened) { $("#t-log-wrap").open = true; $("#t-log-wrap").dataset.prepOpened = "1"; }
+    }
 
     const total = s.total || (s.loss.length ? s.loss[s.loss.length - 1][0] : 0);
     const last = s.recent[0];
