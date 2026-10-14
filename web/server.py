@@ -212,7 +212,9 @@ def make_handler(app):
         def _call(self, fn, arg):
             """라우트 실행, 예외를 상태 코드로 변환 (Busy 409, 잘못된 요청 400, 그 외 500)"""
             try:
-                self._json(200, _clean(fn(arg)))
+                r = fn(arg)
+                # 반환값 없는 명령도 화면에서 성공으로 판단하도록 빈 객체 응답
+                self._json(200, _clean({} if r is None else r))
             except Busy as e:
                 self._json(409, {"error": str(e)})
             except (KeyError, ValueError, FileNotFoundError) as e:
