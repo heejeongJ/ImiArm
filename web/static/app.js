@@ -809,7 +809,7 @@ const JOINT_HOW = {
   shoulder_lift: "어깨에서 팔을 앞으로 숙였다가 뒤로 끝까지 젖히기",
   elbow_flex: "팔꿈치를 완전히 접었다가 끝까지 펴기",
   wrist_flex: "손목을 위로 끝까지, 아래로 끝까지 꺾기",
-  wrist_roll: "기록하지 않으므로 움직이지 않아도 됨",
+  wrist_roll: "범위는 기록하지 않음, 1단계의 그리퍼 방향이 기준이 되므로 두 팔을 같은 방향으로 맞추기",
   gripper: "집게를 완전히 닫았다가 끝까지 벌리기",
 };
 
@@ -888,7 +888,7 @@ function calibPage(el) {
         ${s.mock ? `<div class="banner">모의 장치 모드에서는 모터와 캘리브레이션 파일에 쓰지 않습니다.</div>` : ""}
         ${s.error ? `<div class="banner err">${esc(s.error)}</div>` : ""}
         <ol class="steps">
-          <li class="${stepState(1)}"><div class="num">1</div><div><div style="font-weight:600">중간 자세 맞추기</div><div class="sub" style="color:var(--text-2)">토크가 풀립니다. 모든 관절을 가동 범위의 가운데에 두고 확인을 누릅니다.</div>${tag(1)}</div></li>
+          <li class="${stepState(1)}"><div class="num">1</div><div><div style="font-weight:600">중간 자세 맞추기</div><div class="sub" style="color:var(--text-2)">토크가 풀립니다. 모든 관절을 가동 범위의 가운데에 두고 확인을 누릅니다. 손목 회전은 이때 각도가 기준이 되므로 두 팔 모두 그리퍼를 같은 방향(정면에서 봤을 때 수직)으로 세웁니다. 팔을 움직이면 오른쪽 표의 세로선이 따라 움직이는지 먼저 확인합니다.</div>${tag(1)}</div></li>
           <li class="${stepState(2)}"><div class="num">2</div><div><div style="font-weight:600">가동 범위 기록</div><div class="sub" style="color:var(--text-2)">토크가 풀린 팔을 손으로 잡고 각 관절을 하나씩 양쪽 끝까지 천천히 움직입니다. 억지로 밀지 말고 막히는 곳까지만 움직입니다. 관절별 방법은 오른쪽 표에 있고 최소와 최대가 기록됩니다.</div>${tag(2)}${step === 2 ? `<div id="c-prog" style="margin-top:10px"></div>` : ""}</div></li>
           <li class="${stepState(3)}"><div class="num">3</div><div><div style="font-weight:600">저장과 검증</div><div class="sub" style="color:var(--text-2)">설정을 저장한 뒤 조작 화면의 텔레옵으로 리더 암 동작을 따라 하는지 확인합니다.</div>${step === 3 ? `<div class="note" style="margin-top:2px">저장됨</div>` : ""}</div></li>
         </ol>
@@ -897,7 +897,7 @@ function calibPage(el) {
     // 2단계 관절별 기록 현황
     const prog = $("#c-prog");
     if (prog) {
-      const rows = s.joints.filter((j) => j.state !== "전체 회전");
+      const rows = s.joints.filter((j) => j.name !== "wrist_roll");
       const done = rows.filter((j) => j.state === "기록됨").length;
       prog.innerHTML = `<div style="font-weight:600">기록된 관절 <span style="color:var(--blue)">${done}</span> / ${rows.length}</div>
         <div class="jchips">${rows.map((j) => `<span class="jchip ${j.state === "기록됨" ? "ok" : j.state === "범위 좁음" ? "narrow" : ""}">${j.state === "기록됨" ? "✓ " : ""}${JOINT_KO[j.name]}</span>`).join("")}</div>`;
