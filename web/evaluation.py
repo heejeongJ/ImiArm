@@ -36,8 +36,7 @@ class Evaluation:
             t0 = time.time()
             try:
                 self.policy = self.rig.load_policy(checkpoint)
-                self.session = store.new_eval(checkpoint, label)
-                self.session["task"] = task
+                self.session = store.new_eval(checkpoint, label, task)
                 log.info("평가 모델 로드 완료 (%.1f초)", time.time() - t0)
             except Exception as e:
                 log.exception("평가 모델 로드 실패")
@@ -74,9 +73,7 @@ class Evaluation:
                  "duration_s": round(duration, 1)}
         log.info("평가 회차 %d 결과: %s (%.1f초)%s", trial["pos"] + 1, "성공" if success else "실패",
                  duration, f", {trial['reason']}" if trial["reason"] else "")
-        task = self.session.get("task")
         self.session = store.add_trial(self.session["id"], trial)
-        self.session["task"] = task
 
     def end(self):
         """평가 세션 종료, 실행 중인 정책 중지"""

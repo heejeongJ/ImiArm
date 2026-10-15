@@ -204,6 +204,7 @@ def make_handler(app):
     get_routes = {
         "/api/overview": app.overview, "/api/rig": app.rig_status, "/api/telemetry": app.telemetry,
         "/api/datasets": lambda q: store.list_datasets(), "/api/dataset": app.dataset, "/api/signal": app.signal,
+        "/api/eval/tasks": lambda q: store.task_suggestions(q.get("checkpoint")),
         "/api/train": app.train_status, "/api/train/run": app.train_run, "/api/eval": app.eval_status, "/api/calib": app.calib_status,
     }
     post_routes = {

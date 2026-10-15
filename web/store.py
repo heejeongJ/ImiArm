@@ -284,17 +284,62 @@ def delete_target(kind, run, step=None):
     return target, freed
 
 
+def dataset_tasks(repo):
+    """데이터셋 에피소드의 작업 문장 목록, 많이 쓴 순"""
+    import pyarrow.parquet as pq
+
+    counts = {}
+    for f in sorted((_root(repo) / "meta" / "episodes").glob("*/*.parquet")):
+        try:
+            for tasks in pq.read_table(f, columns=["tasks"]).column("tasks").to_pylist():
+                for t in tasks or []:
+                    counts[t] = counts.get(t, 0) + 1
+        except Exception:
+            continue  # 쓰는 중인 파일은 건너뜀
+    return sorted(counts, key=counts.get, reverse=True)
+
+
+def checkpoint_repo(checkpoint):
+    """체크포인트를 학습한 데이터셋 이름, 모르면 None"""
+    model = (ROOT / checkpoint).resolve()
+    if TRAIN_DIR.resolve() not in model.parents:
+        return None
+    return (_read(model / "train_config.json", {}).get("dataset") or {}).get("repo_id")
+
+
+def task_suggestions(checkpoint):
+    """작업 문장 추천: 학습 데이터 문장, 이전 평가 문장(최근 순), 기본 문장, 중복 제거"""
+    out, seen = [], set()
+
+    def add(task, source):
+        if task and task not in seen:
+            seen.add(task)
+            out.append({"task": task, "source": source})
+
+    repo = checkpoint_repo(checkpoint) if checkpoint else None
+    if repo:
+        try:
+            for t in dataset_tasks(repo):
+                add(t, "학습 데이터")
+        except (ValueError, OSError):
+            pass  # 데이터셋이 지워졌거나 다른 PC에서 학습한 모델
+    for s in reversed(evals()):
+        add(s.get("task"), "이전 평가")
+    add(C.TASK, "기본 문장")
+    return out
+
+
 def evals():
     """평가 세션 전체 기록"""
     return _read(OUT / "evals.json", [])
 
 
-def new_eval(checkpoint, label):
-    """평가 세션 생성"""
+def new_eval(checkpoint, label, task):
+    """평가 세션 생성, 작업 문장 함께 저장"""
     with _lock:
         data = evals()
         session = {"id": datetime.now().strftime("%Y%m%d_%H%M%S"), "checkpoint": checkpoint, "label": label,
-                   "grid": list(C.EVAL_GRID), "trials": []}
+                   "task": task, "grid": list(C.EVAL_GRID), "trials": []}
         data.append(session)
         _write(OUT / "evals.json", data)
         return session
