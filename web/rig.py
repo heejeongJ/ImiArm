@@ -392,8 +392,9 @@ class Rig:
             s = time.perf_counter()
             self.dataset.save_episode()
             log.info("에피소드 %d 저장 완료 (%.1f초 소요)", idx, time.perf_counter() - s)
+            task = self.rec["task"]
             self.rec = None
-            store.set_label(self.dataset.repo_id, idx, result=result)
+            store.set_label(self.dataset.repo_id, idx, result=result, task=task)
             self.last_saved = {"index": idx, "result": result, "length_s": length}
             return idx
         return self.call(fn, timeout=300)

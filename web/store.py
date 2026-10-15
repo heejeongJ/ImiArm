@@ -46,7 +46,7 @@ def _labels_path(repo):
 
 
 def labels(repo):
-    """{"에피소드 번호(str)": {"result": "success"|"fail", "keep": bool, "deleted": bool, "position": str, "memo": str}}"""
+    """{"에피소드 번호(str)": {"result": "success"|"fail", "keep": bool, "deleted": bool, "position": str, "memo": str, "task": str}}"""
     return _read(_labels_path(repo), {})
 
 
@@ -284,19 +284,53 @@ def delete_target(kind, run, step=None):
     return target, freed
 
 
-def dataset_tasks(repo):
-    """데이터셋 에피소드의 작업 문장 목록, 많이 쓴 순"""
+def dataset_task_counts(repo):
+    """데이터셋 작업 문장별 에피소드 수, 많이 쓴 순"""
     import pyarrow.parquet as pq
 
-    counts = {}
+    by_ep = {}
     for f in sorted((_root(repo) / "meta" / "episodes").glob("*/*.parquet")):
         try:
-            for tasks in pq.read_table(f, columns=["tasks"]).column("tasks").to_pylist():
-                for t in tasks or []:
-                    counts[t] = counts.get(t, 0) + 1
+            for r in pq.read_table(f, columns=["episode_index", "tasks"]).to_pylist():
+                by_ep[r["episode_index"]] = (r["tasks"] or [None])[0]
         except Exception:
             continue  # 쓰는 중인 파일은 건너뜀
-    return sorted(counts, key=counts.get, reverse=True)
+    # 녹화 중 저장한 에피소드는 parquet을 아직 못 읽어 라벨의 작업 문장 사용
+    for i, lab in labels(repo).items():
+        if lab.get("task") and int(i) not in by_ep:
+            by_ep[int(i)] = lab["task"]
+    counts = {}
+    for t in by_ep.values():
+        if t:
+            counts[t] = counts.get(t, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
+
+
+def dataset_tasks(repo):
+    """데이터셋 에피소드의 작업 문장 목록, 많이 쓴 순"""
+    return list(dataset_task_counts(repo))
+
+
+def record_task_suggestions(repo):
+    """녹화 작업 문장 추천: 녹화 대상 데이터셋 문장과 개수, 다른 데이터셋 문장, 기본 문장"""
+    out, seen = [], set()
+
+    def add(task, source, count=None):
+        if task and task not in seen:
+            seen.add(task)
+            out.append({"task": task, "source": source, "count": count})
+
+    try:
+        for t, n in dataset_task_counts(repo).items():
+            add(t, "이 데이터셋", n)
+    except ValueError:
+        pass  # 잘못된 이름이거나 아직 없는 데이터셋
+    for d in list_datasets():
+        if d["repo"] != repo:
+            for t in dataset_tasks(d["repo"]):
+                add(t, "다른 데이터셋")
+    add(C.TASK, "기본 문장")
+    return out
 
 
 def checkpoint_repo(checkpoint):
