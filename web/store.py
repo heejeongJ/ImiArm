@@ -179,7 +179,8 @@ def checkpoints():
         for row in run_log(run.name):
             if row["step"] <= step:
                 loss = row["loss"]
-        out.append({"path": str(model.relative_to(ROOT)), "run": run.name, "step": step, "loss": loss})
+        out.append({"path": str(model.relative_to(ROOT)), "run": run.name, "step": step, "loss": loss,
+                    "resumable": (model.parent / "training_state").is_dir()})
     return sorted(out, key=lambda c: (c["run"], c["step"]), reverse=True)
 
 
@@ -207,6 +208,12 @@ def runs():
     return out
 
 
+def save_run_log(run, rows):
+    """학습 기록 파일을 주어진 줄로 다시 쓰기"""
+    path = TRAIN_DIR / run / "metarobo_log.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+
 def _run_dir(run):
     """학습 폴더 경로, outputs/train 바로 아래가 아니면 거부"""
     d = (TRAIN_DIR / run).resolve()
@@ -220,9 +227,8 @@ def _finite(row):
     return {k: (v if not isinstance(v, float) or v == v and abs(v) != float("inf") else None) for k, v in row.items()}
 
 
-def run_detail(run):
-    """학습 하나의 설정, 기록, 체크포인트"""
-    d = _run_dir(run)
+def run_params(d):
+    """학습 폴더의 설정, metarobo_run.json이 없으면 마지막 체크포인트의 train_config.json 사용"""
     params = _read(d / "metarobo_run.json", None)
     if params is None:
         # 설정 파일 이전 학습은 마지막 체크포인트의 train_config.json 사용
@@ -235,7 +241,13 @@ def run_detail(run):
                       "lr": cfg["policy"].get("optimizer_lr"), "save_freq": cfg.get("save_freq"),
                       "episodes": len(eps) if eps else None, "excluded": None,
                       "device": cfg["policy"].get("device")}
-    return {"run": d.name, "params": params, "log": [_finite(r) for r in run_log(d.name)],
+    return params
+
+
+def run_detail(run):
+    """학습 하나의 설정, 기록, 체크포인트"""
+    d = _run_dir(run)
+    return {"run": d.name, "params": run_params(d), "log": [_finite(r) for r in run_log(d.name)],
             "checkpoints": [c for c in checkpoints() if c["run"] == d.name]}
 
 

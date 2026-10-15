@@ -142,6 +142,10 @@ class App:
         """학습 시작"""
         self.trainer.start(b["policy"], b["repo"], int(b["steps"]), int(b["batch"]), float(b["lr"]), int(b["save_freq"]))
 
+    def train_resume(self, b):
+        """체크포인트에서 이어서 학습"""
+        self.trainer.resume(b["checkpoint"], int(b["steps"]) if b.get("steps") else None)
+
     def train_stop(self, b):
         """학습 중단"""
         self.trainer.stop()
@@ -189,7 +193,8 @@ def make_handler(app):
     post_routes = {
         "/api/estop": app.estop, "/api/rig/connect": app.connect, "/api/rig/disconnect": app.disconnect,
         "/api/teleop": app.teleop, "/api/record/start": app.record_start, "/api/record/finish": app.record_finish,
-        "/api/label": app.label, "/api/train/start": app.train_start, "/api/train/stop": app.train_stop,
+        "/api/label": app.label, "/api/train/start": app.train_start, "/api/train/resume": app.train_resume,
+        "/api/train/stop": app.train_stop,
         "/api/eval/prepare": app.eval_prepare, "/api/eval/trial/start": app.eval_trial_start,
         "/api/eval/trial/finish": app.eval_trial_finish, "/api/eval/end": app.eval_end,
         "/api/calib/start": app.calib_start, "/api/calib/middle": app.calib_middle,

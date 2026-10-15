@@ -775,16 +775,17 @@ function trainPage(el) {
     // 실행 요약 줄, 학습 중이거나 이번 서버 실행에서 끝난 학습
     $("#t-run").hidden = !s.run;
     if (s.run) {
-      const used = p.episodes != null ? `에피소드 ${p.episodes}개 사용 (${p.excluded}개 제외)` : `${p.excluded}개 제외`;
+      const used = p.episodes != null ? `에피소드 ${p.episodes}개 사용${p.excluded != null ? ` (${p.excluded}개 제외)` : ""}` : `${p.excluded ?? 0}개 제외`;
+      const from = p.resumed_from ? `, ${num(p.resumed_from)}스텝에서 이어서` : "";
       $("#t-run").innerHTML = `<span class="stat-label">${running ? "현재 학습" : "마지막 학습"}</span>
-        <span style="font-weight:600;margin-left:8px">${esc(POLICY_KO[p.policy] ?? p.policy)}, ${esc(p.repo)}, ${used}, ${p.device === "cpu" ? "CPU" : "GPU"}</span>`;
+        <span style="font-weight:600;margin-left:8px">${esc(POLICY_KO[p.policy] ?? p.policy)}, ${esc(p.repo)}, ${used}, ${p.device === "cpu" ? "CPU" : "GPU"}${from}</span>`;
     }
     // 첫 기록 전 준비 단계와 경과 시간
-    const preparing = running && !s.recent.length && !s.step;
+    const preparing = running && s.step <= (p.resumed_from ?? 0);
     $("#t-stage").hidden = !preparing;
     if (preparing) {
       const el = Math.round(s.elapsed_s ?? 0);
-      $("#t-stage").textContent = `${s.stage ?? "준비 중"}, ${el >= 60 ? `${Math.floor(el / 60)}분 ` : ""}${el % 60}초 경과. 첫 기록은 ${num(s.log_freq)}스텝에서 나옵니다.`;
+      $("#t-stage").textContent = `${s.stage ?? "준비 중"}, ${el >= 60 ? `${Math.floor(el / 60)}분 ` : ""}${el % 60}초 경과. 첫 기록은 ${num((p.resumed_from ?? 0) + s.log_freq)}스텝에서 나옵니다.`;
       if (!$("#t-log-wrap").dataset.prepOpened) { $("#t-log-wrap").open = true; $("#t-log-wrap").dataset.prepOpened = "1"; }
     }
 
@@ -845,6 +846,7 @@ function trainPage(el) {
     const p = d.params || {};
     const total = p.steps || (d.log.length ? d.log[d.log.length - 1].step : 0);
     const stateKo = { done: "완료", failed: "실패", stopped: "중단됨" }[p.state];
+    const resumable = d.checkpoints.filter((c) => c.resumable);
     const used = p.episodes != null ? `${p.episodes}개 사용${p.excluded != null ? ` (${p.excluded}개 제외)` : ""}` : "-";
     const info = d.params ? [
       ["정책", POLICY_KO[p.policy] ?? p.policy], ["데이터", p.repo], ["에피소드", used],
@@ -878,7 +880,31 @@ function trainPage(el) {
         </tbody></table></div></div>` : ""}
       <div><div class="title" style="margin-bottom:6px">체크포인트</div>
         ${d.checkpoints.length ? `<div class="list">${d.checkpoints.map(ckptRow).join("")}</div>` : `<div class="note">저장된 체크포인트가 없습니다.</div>`}</div>
+      ${resumable.length ? `<div class="resume-box stack">
+        <div><div class="title">이어서 학습</div><div class="note">체크포인트의 학습 상태부터 이어서 같은 학습 폴더에 기록합니다.</div></div>
+        <div class="grid2">
+          <div class="field"><label for="t-res-ckpt">시작 체크포인트</label><select id="t-res-ckpt" class="input">
+            ${resumable.map((c) => `<option value="${esc(c.path)}" data-step="${c.step}">${num(c.step)}스텝</option>`).join("")}</select></div>
+          <div class="field"><label for="t-res-steps">목표 스텝</label><input id="t-res-steps" class="input" type="number" min="1"></div>
+        </div>
+        <button id="t-res-go" class="btn primary" type="button">이어서 학습 시작</button>
+      </div>` : ""}
     </div>`;
+    if (resumable.length) {
+      // 목표 스텝 기본값: 원래 목표, 이미 도달했으면 같은 만큼 더
+      const fill = () => {
+        const from = +$("#t-res-ckpt").selectedOptions[0].dataset.step;
+        $("#t-res-steps").value = p.steps > from ? p.steps : from + (p.steps || from);
+      };
+      $("#t-res-ckpt").onchange = fill;
+      fill();
+      $("#t-res-go").onclick = async (e) => {
+        e.target.disabled = true;
+        const ok = await act("/api/train/resume", { checkpoint: $("#t-res-ckpt").value, steps: $("#t-res-steps").value });
+        e.target.disabled = false;
+        if (ok) { $("#t-dlg").close(); toast("이어서 학습을 시작했습니다."); }
+      };
+    }
     if (!$("#t-dlg").open) $("#t-dlg").showModal();
   }
 }
