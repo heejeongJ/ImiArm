@@ -151,7 +151,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
 .dlg::backdrop{background:rgba(17,24,39,.45)}
 .dlg-body{padding:24px}
 .dlg-info{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px 20px}
-.dlg-scroll{max-height:240px;overflow:auto}
+.dlg-scroll{max-height:240px;overflow-y:auto;overflow-x:hidden}
+.resume-box{padding:16px;border:1px solid var(--line);border-radius:10px}
 
 @media (max-width:640px){
   .dlg-body{padding:16px}
