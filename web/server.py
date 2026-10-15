@@ -151,18 +151,16 @@ class App:
         self.trainer.resume(b["checkpoint"], int(b["steps"]) if b.get("steps") else None)
 
     def train_delete(self, b):
-        """학습 전체, 체크포인트, 학습 상태 삭제, 학습 중이거나 평가에 쓰는 대상은 거부"""
-        kind, run = b["kind"], b["run"]
+        """체크포인트 하나 삭제, 학습 중이거나 평가에 쓰는 체크포인트는 거부"""
+        run, step = b["run"], int(b["step"])
         if self.trainer.state == "running" and self.trainer.run == run:
             raise Busy("진행 중인 학습은 지울 수 없습니다")
         using = self.eval.in_use()
-        if using and kind != "state":
+        if using:
             ckpt = (store.ROOT / using).resolve()
-            run_dir = (store.TRAIN_DIR / run).resolve()
-            in_run = run_dir in ckpt.parents
-            if in_run and (kind == "run" or ckpt.parent.name.isdigit() and int(ckpt.parent.name) == int(b["step"])):
+            if (store.TRAIN_DIR / run).resolve() in ckpt.parents and ckpt.parent.name.isdigit() and int(ckpt.parent.name) == step:
                 raise Busy("평가에 쓰고 있는 체크포인트입니다. 평가를 끝낸 뒤 지우세요")
-        target, freed = store.delete_target(kind, run, b.get("step"))
+        target, freed = store.delete_checkpoint(run, step)
         log.info("학습 결과 삭제: %s (%.1fMB)", target.relative_to(store.ROOT), freed / 2**20)
         return {"freed": freed}
 

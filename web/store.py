@@ -280,28 +280,21 @@ def run_detail(run):
         step_dir = ROOT / Path(c["path"]).parent
         c["size"], c["state_size"] = _size(step_dir), _size(step_dir / "training_state")
     return {"run": d.name, "params": run_params(d), "log": [_finite(r) for r in run_log(d.name)],
-            "checkpoints": ckpts, "size": _size(d)}
+            "checkpoints": ckpts}
 
 
-def delete_target(kind, run, step=None):
-    """학습 전체(run), 체크포인트(checkpoint), 학습 상태(state) 삭제 후 지운 경로와 바이트 수 반환"""
-    if kind not in ("run", "checkpoint", "state"):
-        raise ValueError("알 수 없는 삭제 대상")
+def delete_checkpoint(run, step):
+    """체크포인트 하나 삭제 후 지운 경로와 바이트 수 반환"""
     d = _run_dir(run)
-    if kind == "run":
-        target = d
-    else:
-        steps = [p for p in (d / "checkpoints").glob("[0-9]*") if p.is_dir() and int(p.name) == int(step)]
-        if not steps:
-            raise ValueError("체크포인트를 찾을 수 없습니다")
-        target = steps[0] if kind == "checkpoint" else steps[0] / "training_state"
-        if not target.is_dir():
-            raise ValueError("지울 대상이 없습니다")
+    steps = [p for p in (d / "checkpoints").glob("[0-9]*") if p.is_dir() and int(p.name) == int(step)]
+    if not steps:
+        raise ValueError("체크포인트를 찾을 수 없습니다")
+    target = steps[0]
     freed = _size(target)
     shutil.rmtree(target)
     # 지운 체크포인트를 가리키던 last 바로가기 정리
     last = d / "checkpoints" / "last"
-    if kind == "checkpoint" and last.is_symlink() and not last.exists():
+    if last.is_symlink() and not last.exists():
         last.unlink()
     return target, freed
 
