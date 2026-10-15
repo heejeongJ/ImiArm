@@ -1,5 +1,6 @@
 """LeRobot 데이터셋에 성공/실패 칸이 없어 라벨과 평가 기록은 outputs/metarobo/ 아래 JSON에 별도 보관"""
 import json
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -244,11 +245,43 @@ def run_params(d):
     return params
 
 
+def _size(p):
+    """폴더 안 파일 크기 합 (바이트), 바로가기는 따라가지 않음"""
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file() and not f.is_symlink()) if p.is_dir() else 0
+
+
 def run_detail(run):
-    """학습 하나의 설정, 기록, 체크포인트"""
+    """학습 하나의 설정, 기록, 체크포인트와 용량"""
     d = _run_dir(run)
+    ckpts = [c for c in checkpoints() if c["run"] == d.name]
+    for c in ckpts:
+        step_dir = ROOT / Path(c["path"]).parent
+        c["size"], c["state_size"] = _size(step_dir), _size(step_dir / "training_state")
     return {"run": d.name, "params": run_params(d), "log": [_finite(r) for r in run_log(d.name)],
-            "checkpoints": [c for c in checkpoints() if c["run"] == d.name]}
+            "checkpoints": ckpts, "size": _size(d)}
+
+
+def delete_target(kind, run, step=None):
+    """학습 전체(run), 체크포인트(checkpoint), 학습 상태(state) 삭제 후 지운 경로와 바이트 수 반환"""
+    if kind not in ("run", "checkpoint", "state"):
+        raise ValueError("알 수 없는 삭제 대상")
+    d = _run_dir(run)
+    if kind == "run":
+        target = d
+    else:
+        steps = [p for p in (d / "checkpoints").glob("[0-9]*") if p.is_dir() and int(p.name) == int(step)]
+        if not steps:
+            raise ValueError("체크포인트를 찾을 수 없습니다")
+        target = steps[0] if kind == "checkpoint" else steps[0] / "training_state"
+        if not target.is_dir():
+            raise ValueError("지울 대상이 없습니다")
+    freed = _size(target)
+    shutil.rmtree(target)
+    # 지운 체크포인트를 가리키던 last 바로가기 정리
+    last = d / "checkpoints" / "last"
+    if kind == "checkpoint" and last.is_symlink() and not last.exists():
+        last.unlink()
+    return target, freed
 
 
 def evals():

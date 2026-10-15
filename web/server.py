@@ -146,6 +146,22 @@ class App:
         """체크포인트에서 이어서 학습"""
         self.trainer.resume(b["checkpoint"], int(b["steps"]) if b.get("steps") else None)
 
+    def train_delete(self, b):
+        """학습 전체, 체크포인트, 학습 상태 삭제, 학습 중이거나 평가에 쓰는 대상은 거부"""
+        kind, run = b["kind"], b["run"]
+        if self.trainer.state == "running" and self.trainer.run == run:
+            raise Busy("진행 중인 학습은 지울 수 없습니다")
+        using = self.eval.in_use()
+        if using and kind != "state":
+            ckpt = (store.ROOT / using).resolve()
+            run_dir = (store.TRAIN_DIR / run).resolve()
+            in_run = run_dir in ckpt.parents
+            if in_run and (kind == "run" or ckpt.parent.name.isdigit() and int(ckpt.parent.name) == int(b["step"])):
+                raise Busy("평가에 쓰고 있는 체크포인트입니다. 평가를 끝낸 뒤 지우세요")
+        target, freed = store.delete_target(kind, run, b.get("step"))
+        log.info("학습 결과 삭제: %s (%.1fMB)", target.relative_to(store.ROOT), freed / 2**20)
+        return {"freed": freed}
+
     def train_stop(self, b):
         """학습 중단"""
         self.trainer.stop()
@@ -193,7 +209,7 @@ def make_handler(app):
     post_routes = {
         "/api/estop": app.estop, "/api/rig/connect": app.connect, "/api/rig/disconnect": app.disconnect,
         "/api/teleop": app.teleop, "/api/record/start": app.record_start, "/api/record/finish": app.record_finish,
-        "/api/label": app.label, "/api/train/start": app.train_start, "/api/train/resume": app.train_resume,
+        "/api/label": app.label, "/api/train/start": app.train_start, "/api/train/resume": app.train_resume, "/api/train/delete": app.train_delete,
         "/api/train/stop": app.train_stop,
         "/api/eval/prepare": app.eval_prepare, "/api/eval/trial/start": app.eval_trial_start,
         "/api/eval/trial/finish": app.eval_trial_finish, "/api/eval/end": app.eval_end,
