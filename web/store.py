@@ -192,6 +192,53 @@ def run_log(run):
         return []
 
 
+def runs():
+    """기록이나 체크포인트가 있는 학습 목록, 최근 순"""
+    ckpts = checkpoints()
+    out = []
+    dirs = [d for d in TRAIN_DIR.glob("*") if d.is_dir()] if TRAIN_DIR.exists() else []
+    for d in sorted(dirs, key=lambda p: p.stat().st_mtime, reverse=True):
+        log = run_log(d.name)
+        mine = [c for c in ckpts if c["run"] == d.name]
+        if not log and not mine:
+            continue
+        out.append({"run": d.name, "step": log[-1]["step"] if log else None,
+                    "loss": log[-1]["loss"] if log else None, "checkpoints": mine})
+    return out
+
+
+def _run_dir(run):
+    """학습 폴더 경로, outputs/train 바로 아래가 아니면 거부"""
+    d = (TRAIN_DIR / run).resolve()
+    if d.parent != TRAIN_DIR.resolve() or not d.is_dir():
+        raise ValueError("잘못된 학습 이름")
+    return d
+
+
+def _finite(row):
+    """NaN, 무한대 값을 None으로 바꾼 기록 한 줄"""
+    return {k: (v if not isinstance(v, float) or v == v and abs(v) != float("inf") else None) for k, v in row.items()}
+
+
+def run_detail(run):
+    """학습 하나의 설정, 기록, 체크포인트"""
+    d = _run_dir(run)
+    params = _read(d / "metarobo_run.json", None)
+    if params is None:
+        # 설정 파일 이전 학습은 마지막 체크포인트의 train_config.json 사용
+        cfgs = sorted(d.glob("checkpoints/[0-9]*/pretrained_model/train_config.json"))
+        cfg = _read(cfgs[-1], None) if cfgs else None
+        if cfg:
+            eps = cfg["dataset"].get("episodes")
+            params = {"policy": cfg["policy"].get("type"), "repo": cfg["dataset"].get("repo_id"),
+                      "steps": cfg.get("steps"), "batch": cfg.get("batch_size"),
+                      "lr": cfg["policy"].get("optimizer_lr"), "save_freq": cfg.get("save_freq"),
+                      "episodes": len(eps) if eps else None, "excluded": None,
+                      "device": cfg["policy"].get("device")}
+    return {"run": d.name, "params": params, "log": [_finite(r) for r in run_log(d.name)],
+            "checkpoints": [c for c in checkpoints() if c["run"] == d.name]}
+
+
 def evals():
     """평가 세션 전체 기록"""
     return _read(OUT / "evals.json", [])

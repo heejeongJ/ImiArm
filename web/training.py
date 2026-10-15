@@ -134,16 +134,27 @@ class Trainer:
             self.rows.append(row)
             log.info("학습 %s 스텝 %d/%d, 손실 %.4f", self.run, row["step"], self.total, row["loss"])
             out.mkdir(parents=True, exist_ok=True)
+            # 학습 설정은 첫 기록과 함께 저장, 폴더를 미리 만들면 lerobot-train이 거부
+            if len(self.rows) == 1:
+                self._save_run(out)
             with open(out / "metarobo_log.jsonl", "a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
         code = proc.wait()
         if self.state == "running":
             self.state = "done" if code == 0 else "failed"
+        if (out / "metarobo_run.json").exists():
+            self._save_run(out, state=self.state)
         # 실패 시 마지막 출력 함께 기록
         if self.state == "failed":
             log.error("학습 실패: %s (종료 코드 %d)\n%s", self.run, code, "\n".join(list(self.tail)[-10:]))
         else:
             log.info("학습 종료: %s (%s, 종료 코드 %d)", self.run, self.state, code)
+
+    def _save_run(self, out, **extra):
+        """학습 설정과 시작 시각, 종료 상태를 metarobo_run.json에 저장"""
+        started = datetime.fromtimestamp(self.started).isoformat(timespec="seconds")
+        data = {**self.params, "started": started, **extra}
+        (out / "metarobo_run.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
     def stop(self):
         """학습 프로세스 강제 종료"""

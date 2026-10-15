@@ -689,7 +689,7 @@ function trainPage(el) {
         <div class="btn-row"><button id="t-start" class="btn primary lg" style="flex:2 1 0" type="button">학습 시작</button>
           <button id="t-stop" class="btn lg" style="flex:1 1 0" type="button">중단</button></div>
       </section>
-      <section class="card"><div class="title" style="margin-bottom:6px">저장된 모델</div><div id="t-ckpts" class="list"></div></section>
+      <section class="card"><div class="title" style="margin-bottom:6px">저장된 모델</div><div class="note" style="margin-bottom:6px">학습 이름을 누르면 기록을 볼 수 있습니다.</div><div id="t-ckpts" class="list"></div></section>
     </div>
     <div class="col" style="flex:999 1 600px">
       <section class="card stack">
@@ -711,7 +711,8 @@ function trainPage(el) {
       <section class="card"><div class="title" style="margin-bottom:8px">기록</div><div id="t-recent"></div>
         <details id="t-log-wrap" style="margin-top:12px"><summary class="note" style="cursor:pointer">로그</summary><pre class="log" id="t-log"></pre></details>
       </section>
-    </div></div>`;
+    </div></div>
+    <dialog id="t-dlg" class="dlg" aria-label="지난 학습 기록"></dialog>`;
 
   $("#t-policy").onchange = (e) => ($("#t-lr").value = LR[e.target.value]);
   // 대기 중 마지막 학습 설정 복원, 바꿀 때마다 이 브라우저에 저장
@@ -820,13 +821,74 @@ function trainPage(el) {
     $("#t-hint").textContent = s.hint ?? "";
     if (s.state === "failed" && !$("#t-log-wrap").dataset.opened) { $("#t-log-wrap").open = true; $("#t-log-wrap").dataset.opened = "1"; }
 
-    $("#t-ckpts").innerHTML = s.checkpoints.length
-      ? s.checkpoints.slice(0, 8).map((c) => `<div style="display:flex;align-items:center;gap:12px">
-          <div style="flex:1 1 auto;min-width:0"><div style="font-weight:600">${num(c.step)}스텝</div><div class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.run)}">${esc(c.run)}</div></div>
-          <div class="note">손실 ${c.loss != null ? c.loss.toFixed(3) : "-"}</div>
-          <a href="/eval?checkpoint=${encodeURIComponent(c.path)}" style="font-weight:600;text-decoration:none">평가하기</a></div>`).join("")
+    // 학습 단위로 묶은 체크포인트, 학습 이름을 누르면 상세 창
+    $("#t-ckpts").innerHTML = s.runs.length
+      ? s.runs.slice(0, 6).map((r) => `<div class="run-item">
+          <button class="link run-name" type="button" data-run="${esc(r.run)}" title="${esc(r.run)} 기록 보기">${esc(r.run)}</button>
+          ${r.checkpoints.length ? r.checkpoints.map(ckptRow).join("") : `<div class="note">체크포인트 없음${r.step ? `, ${num(r.step)}스텝까지 기록` : ""}</div>`}
+        </div>`).join("")
       : `<div class="note" style="padding:8px 0">저장된 체크포인트가 없습니다.</div>`;
   }, 1500);
+
+  $("#t-ckpts").onclick = (e) => {
+    const b = e.target.closest("[data-run]");
+    if (b) openRun(b.dataset.run);
+  };
+  $("#t-dlg").onclick = (e) => {
+    if (e.target === $("#t-dlg") || e.target.closest("[data-close]")) $("#t-dlg").close();
+  };
+
+  // 지난 학습 상세 창: 설정, 손실 곡선, 기록, 체크포인트
+  async function openRun(run) {
+    let d;
+    try { d = await api(`/api/train/run?run=${encodeURIComponent(run)}`); } catch (e) { toast(e.message); return; }
+    const p = d.params || {};
+    const total = p.steps || (d.log.length ? d.log[d.log.length - 1].step : 0);
+    const stateKo = { done: "완료", failed: "실패", stopped: "중단됨" }[p.state];
+    const used = p.episodes != null ? `${p.episodes}개 사용${p.excluded != null ? ` (${p.excluded}개 제외)` : ""}` : "-";
+    const info = d.params ? [
+      ["정책", POLICY_KO[p.policy] ?? p.policy], ["데이터", p.repo], ["에피소드", used],
+      ["목표 스텝", num(p.steps)], ["배치 크기", p.batch], ["학습률", p.lr], ["저장 주기", num(p.save_freq)],
+      ["장치", p.device === "cpu" ? "CPU" : "GPU"], ["시작", p.started ? p.started.replace("T", " ") : "-"], ["결과", stateKo ?? "-"],
+    ] : [];
+    let path = "";
+    if (d.log.length) {
+      const xs = d.log.map((r) => r.step), ys = d.log.map((r) => Math.log10(Math.max(r.loss, 1e-6)));
+      const [y0, y1] = extent([ys], 0.3);
+      path = linePath(xs, ys, { w: 600, h: 200, x0: 0, x1: total || 1, y0, y1 });
+    }
+    $("#t-dlg").innerHTML = `<div class="dlg-body stack">
+      <div class="between"><div class="title" style="overflow-wrap:anywhere">${esc(d.run)}</div>
+        <button class="btn sm quiet" type="button" data-close>닫기</button></div>
+      ${info.length
+        ? `<div class="dlg-info">${info.map(([k, v]) => `<div><div class="stat-label">${k}</div><div style="font-weight:600;overflow-wrap:anywhere">${esc(v ?? "-")}</div></div>`).join("")}</div>`
+        : `<div class="note">설정 정보가 없습니다.</div>`}
+      <div>
+        <div class="card-head" style="margin-bottom:6px"><div class="title">손실 곡선</div><div class="note">세로축은 로그 눈금</div></div>
+        ${d.log.length
+          ? `<svg class="chart" viewBox="0 0 600 200" preserveAspectRatio="none" style="height:200px" role="img" aria-label="지난 학습 손실 곡선">
+              ${[50, 100, 150].map((y) => `<line x1="0" y1="${y}" x2="600" y2="${y}" stroke="#EEF0F3" vector-effect="non-scaling-stroke"/>`).join("")}
+              <path d="${path}" fill="none" stroke="#2563EB" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
+            <div class="between note" style="margin-top:8px"><span>0</span><span>${total ? num(Math.round(total / 2)) : ""}</span><span>${total ? `${num(total)}스텝` : ""}</span></div>`
+          : `<div class="empty">기록이 없습니다.</div>`}
+      </div>
+      ${d.log.length ? `<div><div class="title" style="margin-bottom:6px">기록</div><div class="dlg-scroll">
+        <table class="tbl plain"><thead><tr><th>스텝</th><th>손실</th><th>학습률</th><th>초당 반복</th></tr></thead><tbody>
+        ${d.log.slice().reverse().map((r) => `<tr><td style="font-weight:400">${num(r.step)}</td><td>${r.loss.toFixed(3)}</td><td>${r.lr != null ? r.lr.toExponential(1) : "-"}</td><td>${r.step_s ? (1 / r.step_s).toFixed(1) : "-"}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      <div><div class="title" style="margin-bottom:6px">체크포인트</div>
+        ${d.checkpoints.length ? `<div class="list">${d.checkpoints.map(ckptRow).join("")}</div>` : `<div class="note">저장된 체크포인트가 없습니다.</div>`}</div>
+    </div>`;
+    if (!$("#t-dlg").open) $("#t-dlg").showModal();
+  }
+}
+
+// 체크포인트 한 줄: 스텝, 손실, 평가하기
+function ckptRow(c) {
+  return `<div style="display:flex;align-items:center;gap:12px">
+    <div style="flex:1 1 auto;font-weight:600">${num(c.step)}스텝</div>
+    <div class="note">손실 ${c.loss != null ? c.loss.toFixed(3) : "-"}</div>
+    <a href="/eval?checkpoint=${encodeURIComponent(c.path)}" style="font-weight:600;text-decoration:none">평가하기</a></div>`;
 }
 
 // 평가 화면: 모델 준비, 회차 진행, 모델별 성공률

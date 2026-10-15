@@ -82,7 +82,12 @@ class App:
 
     def train_status(self, q):
         """학습 상태, 체크포인트, 데이터셋 목록"""
-        return {**self.trainer.status(), "checkpoints": store.checkpoints(), "datasets": store.list_datasets()}
+        return {**self.trainer.status(), "checkpoints": store.checkpoints(), "runs": store.runs(),
+                "datasets": store.list_datasets()}
+
+    def train_run(self, q):
+        """지난 학습 하나의 설정, 기록, 체크포인트"""
+        return store.run_detail(q["run"])
 
     def eval_status(self, q):
         """평가 상태와 체크포인트 목록"""
@@ -179,7 +184,7 @@ def make_handler(app):
     get_routes = {
         "/api/overview": app.overview, "/api/rig": app.rig_status, "/api/telemetry": app.telemetry,
         "/api/datasets": lambda q: store.list_datasets(), "/api/dataset": app.dataset, "/api/signal": app.signal,
-        "/api/train": app.train_status, "/api/eval": app.eval_status, "/api/calib": app.calib_status,
+        "/api/train": app.train_status, "/api/train/run": app.train_run, "/api/eval": app.eval_status, "/api/calib": app.calib_status,
     }
     post_routes = {
         "/api/estop": app.estop, "/api/rig/connect": app.connect, "/api/rig/disconnect": app.disconnect,
