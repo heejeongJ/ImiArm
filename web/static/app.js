@@ -837,7 +837,21 @@ function trainPage(el) {
   };
   $("#t-dlg").onclick = (e) => {
     if (e.target === $("#t-dlg") || e.target.closest("[data-close]")) $("#t-dlg").close();
+    const del = e.target.closest("[data-del]");
+    if (del) removeTarget(del.dataset.del, del.dataset.run, del.dataset.step, del.dataset.label, +del.dataset.size, del.dataset.count);
   };
+
+  // 삭제 확인 후 삭제, 학습 전체를 지우면 창 닫기
+  async function removeTarget(kind, run, step, label, size, count) {
+    const what = { run: `학습 전체(체크포인트 ${count}개)`, checkpoint: "체크포인트", state: "이어서 학습용 상태" }[kind];
+    const extra = kind === "state" ? "\n평가용 모델은 남고, 이 체크포인트에서는 더 이상 이어서 학습할 수 없습니다." : "";
+    if (!confirm(`${label} ${what}를 지웁니다. (약 ${fmtSize(size)})${extra}\n지운 파일은 되살릴 수 없습니다. 계속할까요?`)) return;
+    const r = await act("/api/train/delete", { kind, run, step });
+    if (!r) return;
+    toast(`약 ${fmtSize(r.freed)}를 비웠습니다.`);
+    if (kind === "run") $("#t-dlg").close();
+    else openRun(run);
+  }
 
   // 지난 학습 상세 창: 설정, 손실 곡선, 기록, 체크포인트
   async function openRun(run) {
@@ -861,7 +875,8 @@ function trainPage(el) {
     }
     $("#t-dlg").innerHTML = `<div class="dlg-body stack">
       <div class="between"><div class="title" style="overflow-wrap:anywhere">${esc(d.run)}</div>
-        <button class="btn sm quiet" type="button" data-close>닫기</button></div>
+        <div class="btn-row"><button class="btn sm quiet danger-text" type="button" data-del="run" data-run="${esc(d.run)}" data-label="${esc(d.run)}" data-size="${d.size}" data-count="${d.checkpoints.length}">학습 삭제</button>
+        <button class="btn sm quiet" type="button" data-close>닫기</button></div></div>
       ${info.length
         ? `<div class="dlg-info">${info.map(([k, v]) => `<div><div class="stat-label">${k}</div><div style="font-weight:600;overflow-wrap:anywhere">${esc(v ?? "-")}</div></div>`).join("")}</div>`
         : `<div class="note">설정 정보가 없습니다.</div>`}
@@ -879,7 +894,7 @@ function trainPage(el) {
         ${d.log.slice().reverse().map((r) => `<tr><td style="font-weight:400">${num(r.step)}</td><td>${r.loss.toFixed(3)}</td><td>${r.lr != null ? r.lr.toExponential(1) : "-"}</td><td>${r.step_s ? (1 / r.step_s).toFixed(1) : "-"}</td></tr>`).join("")}
         </tbody></table></div></div>` : ""}
       <div><div class="title" style="margin-bottom:6px">체크포인트</div>
-        ${d.checkpoints.length ? `<div class="list">${d.checkpoints.map(ckptRow).join("")}</div>` : `<div class="note">저장된 체크포인트가 없습니다.</div>`}</div>
+        ${d.checkpoints.length ? `<div class="list">${d.checkpoints.map((c) => ckptRow(c, d.run)).join("")}</div>` : `<div class="note">저장된 체크포인트가 없습니다.</div>`}</div>
       ${resumable.length ? `<div class="resume-box stack">
         <div><div class="title">이어서 학습</div><div class="note">체크포인트의 학습 상태부터 이어서 같은 학습 폴더에 기록합니다.</div></div>
         <div class="grid2">
@@ -910,11 +925,20 @@ function trainPage(el) {
 }
 
 // 체크포인트 한 줄: 스텝, 손실, 평가하기
-function ckptRow(c) {
-  return `<div style="display:flex;align-items:center;gap:12px">
-    <div style="flex:1 1 auto;font-weight:600">${num(c.step)}스텝</div>
+function ckptRow(c, manage) {
+  // manage(학습 이름)가 있으면 용량과 삭제 버튼 표시
+  const del = (kind, size, text) => `<button class="link danger-text" type="button" data-del="${kind}" data-run="${esc(manage)}"
+    data-step="${c.step}" data-label="${num(c.step)}스텝" data-size="${size}">${text}</button>`;
+  return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px">
+    <div style="flex:1 1 auto;font-weight:600">${num(c.step)}스텝${manage ? ` <span class="note" style="font-weight:400">${fmtSize(c.size)}</span>` : ""}</div>
     <div class="note">손실 ${c.loss != null ? c.loss.toFixed(3) : "-"}</div>
-    <a href="/eval?checkpoint=${encodeURIComponent(c.path)}" style="font-weight:600;text-decoration:none">평가하기</a></div>`;
+    <a href="/eval?checkpoint=${encodeURIComponent(c.path)}" style="font-weight:600;text-decoration:none">평가하기</a>
+    ${manage ? `${c.resumable ? del("state", c.state_size, "학습 상태 삭제") : ""}${del("checkpoint", c.size, "삭제")}` : ""}</div>`;
+}
+
+// 바이트 수를 MB, GB로 표시
+function fmtSize(b) {
+  return b >= 2 ** 30 ? `${(b / 2 ** 30).toFixed(1)}GB` : `${Math.max(1, Math.round(b / 2 ** 20))}MB`;
 }
 
 // 평가 화면: 모델 준비, 회차 진행, 모델별 성공률
