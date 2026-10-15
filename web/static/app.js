@@ -841,7 +841,7 @@ function trainPage(el) {
     $("#t-run").hidden = !s.run;
     if (s.run) {
       const used = p.episodes != null ? `에피소드 ${p.episodes}개 사용${p.excluded != null ? ` (${p.excluded}개 제외)` : ""}` : `${p.excluded ?? 0}개 제외`;
-      const from = p.resumed_from ? `, ${num(p.resumed_from)}스텝에서 이어서` : "";
+      const from = p.resumed_from ? `, 기존(${num(p.resumed_from)}스텝) 이어서 진행` : "";
       $("#t-run").innerHTML = `<span class="stat-label">${running ? "현재 학습" : "마지막 학습"}</span>
         <span style="font-weight:600;margin-left:8px">${esc(POLICY_KO[p.policy] ?? p.policy)}, ${esc(p.repo)}, ${used}, ${p.device === "cpu" ? "CPU" : "GPU"}${from}</span>`;
     }
