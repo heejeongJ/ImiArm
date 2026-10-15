@@ -269,7 +269,7 @@ function operatePage(el) {
     const note = $("#task-note");
     note.classList.toggle("warn", !hit && mine.length > 0);
     note.textContent = hit ? `기존 문장, 에피소드 ${hit.count}개`
-      : mine.length ? "신규 문장, 녹화하면 작업 문장이 섞임"
+      : mine.length ? "신규 문장, 데이터셋 문장 혼재 주의"
       : "첫 작업 문장";
   }
   $("#task").oninput = () => { taskEdited = true; taskNote(); };
