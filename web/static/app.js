@@ -949,11 +949,13 @@ function evalPage(el) {
     <section class="card stack" style="flex:999 1 640px" id="e-main"></section>
     <section class="card" style="flex:1 1 360px" id="e-hist"></section></div>`;
   let key = "";
+  // 고른 모델과 작업 문장, 폼을 다시 그려도 유지
+  let ckptVal = wanted, taskVal = null, taskEdited = false;
 
   // 평가 준비 폼
   const setupHtml = (s) => {
-    const opts = s.checkpoints.map((c) => `<option value="${esc(c.path)}" data-label="${esc(`${c.run.split("_")[0].toUpperCase()} ${num(c.step)}스텝`)}" ${c.path === wanted ? "selected" : ""}>${esc(c.run)} · ${num(c.step)}스텝</option>`);
-    if (s.mock) opts.push(`<option value="mock" data-label="모의 정책">모의 정책 (화면 확인용)</option>`);
+    const opts = s.checkpoints.map((c) => `<option value="${esc(c.path)}" data-label="${esc(`${c.run.split("_")[0].toUpperCase()} ${num(c.step)}스텝`)}" ${c.path === ckptVal ? "selected" : ""}>${esc(c.run)}, ${num(c.step)}스텝</option>`);
+    if (s.mock) opts.push(`<option value="mock" data-label="모의 정책" ${ckptVal === "mock" ? "selected" : ""}>모의 정책 (화면 확인용)</option>`);
     const rigOk = ["idle", "teleop"].includes(s.rig);
     return `
       <div class="title">평가 준비</div>
@@ -961,7 +963,9 @@ function evalPage(el) {
       ${s.error ? `<div class="banner err">${esc(s.error)}</div>` : ""}
       <div class="field"><label for="e-ckpt">모델</label>
         ${opts.length ? `<select id="e-ckpt" class="input">${opts.join("")}</select>` : `<div class="note">저장된 체크포인트가 없습니다. 학습 화면에서 먼저 학습하세요.</div>`}</div>
-      <div class="field"><label for="e-task">작업 문장</label><input id="e-task" class="input" value="${esc(overview.task)}"></div>
+      <div class="field"><label for="e-task">작업 문장</label>
+        <input id="e-task" class="input" list="e-task-list" autocomplete="off" value="${esc(taskVal ?? overview.task)}">
+        <datalist id="e-task-list"></datalist><div class="note" id="e-task-note"></div></div>
       <div class="note">물체 위치 ${s.grid[0] * s.grid[1]}곳에서 한 번씩 실행합니다. 회차마다 최대 ${overview.episode_time_s}초 동안 정책을 실행하고, 끝나면 시작 자세로 돌아갑니다.</div>
       <div class="btn-row"><button class="btn primary lg flex" id="e-prepare" ${opts.length && rigOk && !s.loading ? "" : "disabled"}>${s.loading ? "모델 읽는 중" : "평가 준비"}</button></div>`;
   };
@@ -997,6 +1001,26 @@ function evalPage(el) {
   };
   onLeave(() => camLive(false));
 
+  // 작업 문장 추천 불러오기, 직접 고치기 전이면 학습 데이터 문장으로 채움
+  async function loadTasks() {
+    const sel = $("#e-ckpt");
+    if (!sel || !$("#e-task")) return;
+    const list = await api(`/api/eval/tasks?checkpoint=${encodeURIComponent(sel.value)}`).catch(() => []);
+    if (!$("#e-task-list")) return;
+    $("#e-task-list").innerHTML = list.map((t) => `<option value="${esc(t.task)}" label="${esc(t.source)}"></option>`).join("");
+    const train = list.find((t) => t.source === "학습 데이터");
+    if (!taskEdited && train) $("#e-task").value = taskVal = train.task;
+    $("#e-task-note").textContent = train
+      ? (taskEdited ? "칸을 비우거나 눌러서 추천 문장을 고를 수 있습니다." : "이 모델의 학습 데이터 문장으로 채웠습니다. 칸을 눌러 다른 추천 문장을 고를 수 있습니다.")
+      : "학습 데이터 문장을 찾지 못했습니다. 칸을 눌러 추천 문장을 고를 수 있습니다.";
+  }
+  $("#e-main").onchange = (e) => {
+    if (e.target.id === "e-ckpt") { ckptVal = e.target.value; taskEdited = false; loadTasks(); }
+  };
+  $("#e-main").oninput = (e) => {
+    if (e.target.id === "e-task") { taskVal = e.target.value; taskEdited = true; }
+  };
+
   // 평가 버튼 동작
   $("#e-main").onclick = async (e) => {
     const t = e.target.closest("button");
@@ -1023,6 +1047,7 @@ function evalPage(el) {
     if (k !== key) {
       key = k;
       $("#e-main").innerHTML = s.session ? runHtml(s) : setupHtml(s);
+      if (!s.session) loadTasks();
     }
     if (s.session) {
       const tr = s.session.trials, N = s.grid[0] * s.grid[1];
@@ -1053,6 +1078,7 @@ function evalPage(el) {
         const cur = s.session && h.id === s.session.id;
         return `<div><div class="between"><div style="font-weight:600">${esc(h.label)}</div><div style="font-weight:600">${ok} / ${n}</div></div>
           <div class="note">${esc(h.id.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2}).*/, "$1-$2-$3 $4:$5"))}${cur ? ", 평가 진행 중" : ""}</div>
+          ${h.task ? `<div class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.task)}">${esc(h.task)}</div>` : ""}
           <div class="bar"><div style="width:${n ? (ok / n) * 100 : 0}%"></div></div></div>`;
       }).join("") : `<div class="note" style="padding:8px 0">아직 평가 기록이 없습니다.</div>`}</div>`;
   }, 500);
