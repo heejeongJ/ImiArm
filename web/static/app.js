@@ -156,7 +156,7 @@ function operatePage(el) {
         <div class="card-head" style="align-items:center">
           <div class="left" style="align-items:center;gap:18px"><div class="title">관절 추종</div>
             <div class="note" style="display:flex;gap:14px;color:var(--text-2)">
-              <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;border-top:2px dashed var(--gray-line)"></span>목표각 (리더·정책)</span>
+              <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;border-top:2px dashed var(--gray-line)"></span>목표각 (리더 또는 정책)</span>
               <span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:2px;background:var(--blue)"></span>실제각</span>
             </div></div>
           <div class="seg" id="joint-tabs" role="tablist">${ov.joints.map((j) => `<button type="button" role="tab" data-j="${j}">${JOINT_KO[j]}</button>`).join("")}</div>
@@ -206,7 +206,7 @@ function operatePage(el) {
       <section class="card" style="display:flex;flex-direction:column;min-height:300px;flex:1 1 auto">
         <div class="between"><div class="title">명령</div><div class="sub">연결 안 됨</div></div>
         <div style="flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;padding:18px 0">
-          <div class="bubble note" style="color:var(--text-2)">자연어·음성 명령은 아직 연결되지 않았습니다. 학습한 정책은 평가 화면에서 실행할 수 있습니다.</div>
+          <div class="bubble note" style="color:var(--text-2)">자연어와 음성 명령은 아직 연결되지 않았습니다. 학습한 정책은 평가 화면에서 실행할 수 있습니다.</div>
         </div>
         <div class="composer">
           <label for="cmd" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">명령 입력</label>
@@ -445,7 +445,7 @@ function dataPage(el) {
     $("#ds-left tbody").onkeydown = (e) => { const tr = e.target.closest("tr[data-ep]"); if (tr && e.key === "Enter") pick(+tr.dataset.ep); };
   }
 
-  // 물체 위치·메모 입력값이 저장된 값과 다른지
+  // 물체 위치와 메모 입력값이 저장된 값과 다른지
   let shown = { position: "", memo: "" };
   function dirty() {
     const pos = $("#ep-pos"), memo = $("#ep-memo");
@@ -493,7 +493,7 @@ function dataPage(el) {
     $("#ep-dirty").hidden = !d;
   }
 
-  // 에피소드 번호 기준 이전·다음, 끝이면 비활성
+  // 에피소드 번호 기준 이전과 다음, 끝이면 비활성
   function neighbor(step) {
     return detail.episodes.find((x) => x.index === sel + step);
   }
@@ -575,7 +575,7 @@ function dataPage(el) {
       // 한글 조합 중 Enter는 무시
       $(id).onkeydown = (ev) => { if (ev.key === "Enter" && !ev.isComposing) save(); };
     }
-    // 이전·다음 에피소드 이동
+    // 이전과 다음 에피소드 이동
     right.querySelector(".ep-nav").onclick = (ev) => {
       const b = ev.target.closest("[data-nav]");
       const to = b && neighbor(+b.dataset.nav);
