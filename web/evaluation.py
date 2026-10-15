@@ -21,8 +21,10 @@ class Evaluation:
         self.trial_t0 = None
         self.checkpoint = None  # 불러오는 중이거나 평가 중인 체크포인트
 
-    def prepare(self, checkpoint, label, task):
-        """정책 로드(백그라운드) 후 평가 세션 생성"""
+    def prepare(self, checkpoint, label, task, mode=None):
+        """정책 로드(백그라운드) 후 평가 세션 생성, mode는 ACT의 ensemble(시간 앙상블)이나 chunk(구간 실행), 그 외 None"""
+        if mode not in (None, "ensemble", "chunk"):
+            raise ValueError("알 수 없는 실행 방식")
         if self.loading:
             raise Busy("모델을 읽는 중입니다")
         if self.rig.mode not in ("idle", "teleop"):
@@ -35,8 +37,8 @@ class Evaluation:
             """정책 로드와 세션 생성"""
             t0 = time.time()
             try:
-                self.policy = self.rig.load_policy(checkpoint)
-                self.session = store.new_eval(checkpoint, label, task)
+                self.policy = self.rig.load_policy(checkpoint, ensemble=mode == "ensemble")
+                self.session = store.new_eval(checkpoint, label, task, mode)
                 log.info("평가 모델 로드 완료 (%.1f초)", time.time() - t0)
             except Exception as e:
                 log.exception("평가 모델 로드 실패")
