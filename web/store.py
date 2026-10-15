@@ -1,5 +1,6 @@
 """LeRobot 데이터셋에 성공/실패 칸이 없어 라벨과 평가 기록은 outputs/metarobo/ 아래 JSON에 별도 보관"""
 import json
+import re
 import shutil
 import threading
 from datetime import datetime
@@ -20,8 +21,29 @@ def lerobot_home():
 
 
 def record_repo(mock):
-    """녹화 대상 데이터셋 이름, 모의 장치는 _mock 접미사"""
-    return C.DATASET + ("_mock" if mock else "")
+    """녹화 대상 데이터셋 이름, 화면에서 고른 값이 없으면 설정값, 모의 장치는 _mock 접미사"""
+    saved = _read(OUT / "settings.json", {}).get("record_repo_mock" if mock else "record_repo")
+    return saved or C.DATASET + ("_mock" if mock else "")
+
+
+def check_record_repo(repo, mock):
+    """새 녹화 데이터셋 이름 검사, 모의 장치는 _mock 접미사를 붙이고 실제 장치는 _mock 데이터셋 거부"""
+    repo = repo.strip()
+    if not re.fullmatch(r"local/[A-Za-z0-9_-]+", repo):
+        raise ValueError("데이터셋 이름은 local/ 뒤에 영문, 숫자, _, - 만 쓸 수 있습니다")
+    if mock and not repo.endswith("_mock"):
+        repo += "_mock"
+    if not mock and repo.endswith("_mock"):
+        raise ValueError("모의 장치용 데이터셋에는 실제 장치로 녹화할 수 없습니다")
+    return repo
+
+
+def save_record_repo(repo, mock):
+    """고른 녹화 데이터셋을 settings.json에 저장"""
+    with _lock:
+        data = _read(OUT / "settings.json", {})
+        data["record_repo_mock" if mock else "record_repo"] = repo
+        _write(OUT / "settings.json", data)
 
 
 def _read(path, default):
@@ -46,7 +68,7 @@ def _labels_path(repo):
 
 
 def labels(repo):
-    """{"에피소드 번호(str)": {"result": "success"|"fail", "keep": bool, "deleted": bool, "position": str, "memo": str}}"""
+    """{"에피소드 번호(str)": {"result": "success"|"fail", "keep": bool, "deleted": bool, "position": str, "memo": str, "task": str}}"""
     return _read(_labels_path(repo), {})
 
 
@@ -284,19 +306,53 @@ def delete_target(kind, run, step=None):
     return target, freed
 
 
-def dataset_tasks(repo):
-    """데이터셋 에피소드의 작업 문장 목록, 많이 쓴 순"""
+def dataset_task_counts(repo):
+    """데이터셋 작업 문장별 에피소드 수, 많이 쓴 순"""
     import pyarrow.parquet as pq
 
-    counts = {}
+    by_ep = {}
     for f in sorted((_root(repo) / "meta" / "episodes").glob("*/*.parquet")):
         try:
-            for tasks in pq.read_table(f, columns=["tasks"]).column("tasks").to_pylist():
-                for t in tasks or []:
-                    counts[t] = counts.get(t, 0) + 1
+            for r in pq.read_table(f, columns=["episode_index", "tasks"]).to_pylist():
+                by_ep[r["episode_index"]] = (r["tasks"] or [None])[0]
         except Exception:
             continue  # 쓰는 중인 파일은 건너뜀
-    return sorted(counts, key=counts.get, reverse=True)
+    # 녹화 중 저장한 에피소드는 parquet을 아직 못 읽어 라벨의 작업 문장 사용
+    for i, lab in labels(repo).items():
+        if lab.get("task") and int(i) not in by_ep:
+            by_ep[int(i)] = lab["task"]
+    counts = {}
+    for t in by_ep.values():
+        if t:
+            counts[t] = counts.get(t, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
+
+
+def dataset_tasks(repo):
+    """데이터셋 에피소드의 작업 문장 목록, 많이 쓴 순"""
+    return list(dataset_task_counts(repo))
+
+
+def record_task_suggestions(repo):
+    """녹화 작업 문장 추천: 녹화 대상 데이터셋 문장과 개수, 다른 데이터셋 문장, 기본 문장"""
+    out, seen = [], set()
+
+    def add(task, source, count=None):
+        if task and task not in seen:
+            seen.add(task)
+            out.append({"task": task, "source": source, "count": count})
+
+    try:
+        for t, n in dataset_task_counts(repo).items():
+            add(t, "이 데이터셋", n)
+    except ValueError:
+        pass  # 잘못된 이름이거나 아직 없는 데이터셋
+    for d in list_datasets():
+        if d["repo"] != repo:
+            for t in dataset_tasks(d["repo"]):
+                add(t, "다른 데이터셋")
+    add(C.TASK, "기본 문장")
+    return out
 
 
 def checkpoint_repo(checkpoint):

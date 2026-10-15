@@ -130,8 +130,12 @@ class App:
             raise Busy("result는 success, fail, null 중 하나")
         idx = self.rig.record_finish(result)
         if idx is not None:
-            store.set_label(store.record_repo(self.rig.mock), idx, length_s=self.rig.last_saved["length_s"])
+            store.set_label(self.rig.repo, idx, length_s=self.rig.last_saved["length_s"])
         return {"episode": idx}
+
+    def record_dataset(self, b):
+        """녹화 대상 데이터셋 변경"""
+        return {"dataset": self.rig.set_repo(b["repo"])}
 
     def label(self, b):
         """에피소드 라벨 수정"""
@@ -205,11 +209,13 @@ def make_handler(app):
         "/api/overview": app.overview, "/api/rig": app.rig_status, "/api/telemetry": app.telemetry,
         "/api/datasets": lambda q: store.list_datasets(), "/api/dataset": app.dataset, "/api/signal": app.signal,
         "/api/eval/tasks": lambda q: store.task_suggestions(q.get("checkpoint")),
+        "/api/record/tasks": lambda q: store.record_task_suggestions(q["repo"]),
         "/api/train": app.train_status, "/api/train/run": app.train_run, "/api/eval": app.eval_status, "/api/calib": app.calib_status,
     }
     post_routes = {
         "/api/estop": app.estop, "/api/rig/connect": app.connect, "/api/rig/disconnect": app.disconnect,
         "/api/teleop": app.teleop, "/api/record/start": app.record_start, "/api/record/finish": app.record_finish,
+        "/api/record/dataset": app.record_dataset,
         "/api/label": app.label, "/api/train/start": app.train_start, "/api/train/resume": app.train_resume, "/api/train/delete": app.train_delete,
         "/api/train/stop": app.train_stop,
         "/api/eval/prepare": app.eval_prepare, "/api/eval/trial/start": app.eval_trial_start,

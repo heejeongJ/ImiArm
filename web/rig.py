@@ -97,6 +97,7 @@ class Rig:
         self.hist = deque(maxlen=C.FPS * HISTORY_S)
         self.home = None
         self.dataset = None
+        self.repo = store.record_repo(mock)  # 녹화 대상 데이터셋
         self.rec = None  # {"state": "recording"|"pending", "t0", "frames", "task"}
         self.last_saved = None
         self.policy = None
@@ -392,8 +393,9 @@ class Rig:
             s = time.perf_counter()
             self.dataset.save_episode()
             log.info("에피소드 %d 저장 완료 (%.1f초 소요)", idx, time.perf_counter() - s)
+            task = self.rec["task"]
             self.rec = None
-            store.set_label(self.dataset.repo_id, idx, result=result)
+            store.set_label(self.dataset.repo_id, idx, result=result, task=task)
             self.last_saved = {"index": idx, "result": result, "length_s": length}
             return idx
         return self.call(fn, timeout=300)
@@ -406,7 +408,7 @@ class Rig:
         from lerobot.utils.constants import ACTION, OBS_STR
         from lerobot.utils.feature_utils import hw_to_dataset_features
 
-        repo = store.record_repo(self.mock)
+        repo = self.repo
         # resume()은 root 필수, create()도 같은 폴더로 고정
         root = store.lerobot_home() / repo
         kw = dict(root=root, image_writer_threads=4 * len(C.CAMERAS), streaming_encoding=True, encoder_threads=2)
@@ -418,6 +420,20 @@ class Rig:
             features = {**hw_to_dataset_features(self.robot.action_features, ACTION),
                         **hw_to_dataset_features(self.robot.observation_features, OBS_STR)}
             self.dataset = LeRobotDataset.create(repo, C.FPS, features=features, robot_type=self.robot.name, **kw)
+
+    def set_repo(self, repo):
+        """녹화 대상 데이터셋 변경, 열린 데이터셋은 마무리 후 전환"""
+        if self.mode == "connecting":
+            raise Busy("장치를 여는 중입니다")
+        if self.rec:
+            raise Busy("녹화 중인 에피소드를 먼저 성공/실패로 정리하세요")
+        repo = store.check_record_repo(repo, self.mock)
+        if self.mode != "off":
+            self.call(self._close_dataset, timeout=120)
+        store.save_record_repo(repo, self.mock)
+        self.repo, self.last_saved = repo, None
+        log.info("녹화 데이터셋 변경: %s", repo)
+        return repo
 
     def _stop_recording(self, discard):
         """녹화 상태 해제, discard면 에피소드 버퍼 폐기"""
@@ -522,7 +538,7 @@ class Rig:
         return {
             "mode": self.mode, "mock": self.mock, "error": self.error,
             "cameras": sorted(self.frames), "recording": rec, "policy": pol,
-            "dataset": store.record_repo(self.mock), "last_saved": self.last_saved,
+            "dataset": self.repo, "last_saved": self.last_saved,
             "episode_time_s": C.EPISODE_TIME_S,
         }
 

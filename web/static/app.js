@@ -193,7 +193,16 @@ function operatePage(el) {
       <section class="card stack">
         <div class="between"><div class="title">시연 수집</div><div class="sub" id="rec-progress">-</div></div>
         <div class="progress"><div id="rec-bar" style="width:0"></div></div>
-        <div class="field"><label for="task">작업 문장</label><input id="task" class="input" type="text"></div>
+        <div class="field"><label for="rec-repo">녹화 데이터셋</label>
+          <select id="rec-repo" class="input"></select>
+          <div class="btn-row" id="rec-new" hidden>
+            <input id="rec-new-name" class="input" style="flex:1 1 120px;width:auto" type="text" value="local/" aria-label="새 데이터셋 이름">
+            <button class="btn sm" style="height:44px" type="button" id="rec-new-ok">생성</button><button class="btn sm quiet" style="height:44px" type="button" id="rec-new-cancel">취소</button>
+          </div>
+          <div class="note" id="rec-new-note" hidden>영문, 숫자, _, - 사용 가능, 첫 에피소드 저장 시 생성</div></div>
+        <div class="field"><label for="task">작업 문장</label>
+          <input id="task" class="input" type="text" list="task-list" autocomplete="off">
+          <datalist id="task-list"></datalist><div class="note" id="task-note"></div></div>
         <button id="rec-main" class="btn primary lg" type="button" disabled>녹화 시작</button>
         <div class="btn-row">
           <button class="btn flex" type="button" data-finish="success" disabled>성공</button>
@@ -201,7 +210,6 @@ function operatePage(el) {
           <button class="btn flex" type="button" data-finish="discard" title="이번 녹화를 버립니다" disabled>재녹화</button>
         </div>
         <div class="between note"><span id="rec-counts">-</span><span id="rec-avg"></span></div>
-        <div class="note" id="rec-dataset"></div>
       </section>
       <section class="card" style="display:flex;flex-direction:column;min-height:300px;flex:1 1 auto">
         <div class="between"><div class="title">명령</div><div class="sub">연결 안 됨</div></div>
@@ -244,6 +252,55 @@ function operatePage(el) {
   $("#joint-tabs").onclick = (e) => e.target.dataset.j && setJoint(e.target.dataset.j);
 
   $("#task").value = ov.task;
+  // 녹화 작업 문장 추천, 직접 고치기 전이면 데이터셋에서 가장 많이 쓴 문장으로 채움
+  let recTasks = [], recRepo = null, recSaved = null, taskEdited = false;
+  async function loadRecTasks(repo) {
+    recTasks = await api(`/api/record/tasks?repo=${encodeURIComponent(repo)}`).catch(() => []);
+    $("#task-list").innerHTML = recTasks.map((t) => `<option value="${esc(t.task)}" label="${esc(t.count != null ? `${t.source}, ${t.count}개` : t.source)}"></option>`).join("");
+    const top = recTasks.find((t) => t.count != null);
+    if (!taskEdited && top) $("#task").value = top.task;
+    taskNote();
+  }
+  // 지금 문장으로 녹화한 개수, 데이터셋에 없는 문장이면 섞임 경고
+  function taskNote() {
+    const v = $("#task").value.trim();
+    const mine = recTasks.filter((t) => t.count != null);
+    const hit = mine.find((t) => t.task === v);
+    const note = $("#task-note");
+    note.classList.toggle("warn", !hit && mine.length > 0);
+    note.textContent = hit ? `기존 문장, 에피소드 ${hit.count}개`
+      : mine.length ? "신규 문장, 데이터셋 문장 혼재 주의"
+      : "첫 작업 문장";
+  }
+  $("#task").oninput = () => { taskEdited = true; taskNote(); };
+
+  // 녹화 데이터셋 목록, 모의 장치면 _mock 데이터셋만, 아직 없는 새 데이터셋도 표시
+  async function loadRecRepos(s) {
+    const all = await api("/api/datasets").catch(() => []);
+    const list = all.filter((d) => d.repo.endsWith("_mock") === s.mock);
+    if (!list.some((d) => d.repo === s.dataset)) list.unshift({ repo: s.dataset, episodes: 0 });
+    $("#rec-repo").innerHTML = list.map((d) => `<option value="${esc(d.repo)}" ${d.repo === s.dataset ? "selected" : ""}>${esc(d.repo)} (에피소드 ${d.episodes}개)</option>`).join("")
+      + `<option value="__new">신규 데이터셋 생성</option>`;
+  }
+  const showNew = (on) => {
+    $("#rec-new").hidden = $("#rec-new-note").hidden = !on;
+    if (on) $("#rec-new-name").focus();
+    else $("#rec-repo").value = recRepo;
+  };
+  // 데이터셋 바꾸기, 작업 문장은 새 데이터셋 기준으로 다시 채움
+  const switchRepo = async (repo) => {
+    const r = await act("/api/record/dataset", { repo });
+    if (!r) return false;
+    taskEdited = false;
+    toast(`녹화 데이터셋 변경: ${r.dataset}`);
+    return true;
+  };
+  $("#rec-repo").onchange = async (e) => {
+    if (e.target.value === "__new") return showNew(true);
+    if (!(await switchRepo(e.target.value))) e.target.value = recRepo;
+  };
+  $("#rec-new-ok").onclick = async () => { if (await switchRepo($("#rec-new-name").value)) showNew(false); };
+  $("#rec-new-cancel").onclick = () => showNew(false);
 
   // 장치 카드, 상태가 바뀔 때만 다시 그림
   let devKey = "";
@@ -303,7 +360,15 @@ function operatePage(el) {
     $("#rec-bar").style.width = `${Math.min(100, (c.total / c.target) * 100)}%`;
     $("#rec-counts").textContent = `성공 ${c.success}, 실패 ${c.fail}`;
     $("#rec-avg").textContent = c.avg_length_s ? `평균 길이 ${c.avg_length_s.toFixed(0)}초` : "";
-    $("#rec-dataset").textContent = `데이터셋 ${s.dataset}`;
+    $("#rec-repo").disabled = !!r || s.mode === "connecting";
+    // 데이터셋이 바뀌거나 에피소드를 저장하면 목록, 추천, 개수 다시 읽기
+    const saved = s.last_saved ? s.last_saved.index : null;
+    if (s.dataset !== recRepo || saved !== recSaved) {
+      recRepo = s.dataset;
+      recSaved = saved;
+      loadRecTasks(s.dataset);
+      loadRecRepos(s);
+    }
     const main = $("#rec-main");
     main.classList.toggle("rec", !!r);
     if (r && r.state === "recording") {
