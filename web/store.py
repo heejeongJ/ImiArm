@@ -1,5 +1,6 @@
 """LeRobot 데이터셋에 성공/실패 칸이 없어 라벨과 평가 기록은 outputs/metarobo/ 아래 JSON에 별도 보관"""
 import json
+import re
 import shutil
 import threading
 from datetime import datetime
@@ -20,8 +21,29 @@ def lerobot_home():
 
 
 def record_repo(mock):
-    """녹화 대상 데이터셋 이름, 모의 장치는 _mock 접미사"""
-    return C.DATASET + ("_mock" if mock else "")
+    """녹화 대상 데이터셋 이름, 화면에서 고른 값이 없으면 설정값, 모의 장치는 _mock 접미사"""
+    saved = _read(OUT / "settings.json", {}).get("record_repo_mock" if mock else "record_repo")
+    return saved or C.DATASET + ("_mock" if mock else "")
+
+
+def check_record_repo(repo, mock):
+    """새 녹화 데이터셋 이름 검사, 모의 장치는 _mock 접미사를 붙이고 실제 장치는 _mock 데이터셋 거부"""
+    repo = repo.strip()
+    if not re.fullmatch(r"local/[A-Za-z0-9_-]+", repo):
+        raise ValueError("데이터셋 이름은 local/ 뒤에 영문, 숫자, _, - 만 쓸 수 있습니다")
+    if mock and not repo.endswith("_mock"):
+        repo += "_mock"
+    if not mock and repo.endswith("_mock"):
+        raise ValueError("모의 장치용 데이터셋에는 실제 장치로 녹화할 수 없습니다")
+    return repo
+
+
+def save_record_repo(repo, mock):
+    """고른 녹화 데이터셋을 settings.json에 저장"""
+    with _lock:
+        data = _read(OUT / "settings.json", {})
+        data["record_repo_mock" if mock else "record_repo"] = repo
+        _write(OUT / "settings.json", data)
 
 
 def _read(path, default):
