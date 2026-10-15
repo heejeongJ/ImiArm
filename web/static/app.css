@@ -152,6 +152,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
 .dlg-body{padding:24px}
 .dlg-info{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px 20px}
 .dlg-scroll{max-height:240px;overflow-y:auto;overflow-x:hidden}
+.danger-text,.danger-text:hover:not(:disabled){color:var(--red)}
 .resume-box{padding:16px;border:1px solid var(--line);border-radius:10px}
 
 @media (max-width:640px){

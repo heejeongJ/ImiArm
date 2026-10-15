@@ -19,6 +19,7 @@ class Evaluation:
         self.loading = False
         self.error = ""
         self.trial_t0 = None
+        self.checkpoint = None  # 불러오는 중이거나 평가 중인 체크포인트
 
     def prepare(self, checkpoint, label, task):
         """정책 로드(백그라운드) 후 평가 세션 생성"""
@@ -27,7 +28,7 @@ class Evaluation:
         if self.rig.mode not in ("idle", "teleop"):
             raise Busy("조작 화면에서 장치를 먼저 연결하세요")
         self.end()
-        self.loading, self.error = True, ""
+        self.loading, self.error, self.checkpoint = True, "", checkpoint
         log.info("평가 모델 로드 시작: %s", checkpoint)
 
         def load():
@@ -84,6 +85,12 @@ class Evaluation:
         if self.session:
             log.info("평가 종료 (%d회차 기록)", len(self.session["trials"]))
         self.session, self.policy, self.trial_t0 = None, None, None
+        if not self.loading:
+            self.checkpoint = None
+
+    def in_use(self):
+        """모델을 불러오는 중이거나 평가 중인 체크포인트 경로"""
+        return self.checkpoint if self.loading or self.session else None
 
     def status(self):
         """화면용 평가 상태와 전체 기록"""
