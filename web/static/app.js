@@ -1010,9 +1010,12 @@ function evalPage(el) {
     $("#e-task-list").innerHTML = list.map((t) => `<option value="${esc(t.task)}" label="${esc(t.source)}"></option>`).join("");
     const train = list.find((t) => t.source === "학습 데이터");
     if (!taskEdited && train) $("#e-task").value = taskVal = train.task;
+    // 안내 문구에 고른 모델 이름 표시, "act_..., 5,000스텝"은 "act_... (5,000스텝)"으로
+    const [run, step] = sel.selectedOptions[0].textContent.split(", ");
+    const model = step ? `${run} (${step})` : run;
     $("#e-task-note").textContent = train
-      ? (taskEdited ? "칸을 비우거나 눌러서 추천 문장을 고를 수 있습니다." : "이 모델의 학습 데이터 문장으로 채웠습니다. 칸을 눌러 다른 추천 문장을 고를 수 있습니다.")
-      : "학습 데이터 문장을 찾지 못했습니다. 칸을 눌러 추천 문장을 고를 수 있습니다.";
+      ? (taskEdited ? "칸을 비우거나 눌러서 추천 문장을 고를 수 있습니다." : `${model} 모델의 학습 데이터 문장으로 채웠습니다. 칸을 눌러 다른 추천 문장을 고를 수 있습니다.`)
+      : `${model}의 학습 데이터 문장을 찾지 못했습니다. 칸을 눌러 추천 문장을 고를 수 있습니다.`;
   }
   $("#e-main").onchange = (e) => {
     if (e.target.id === "e-ckpt") { ckptVal = e.target.value; taskEdited = false; loadTasks(); }
