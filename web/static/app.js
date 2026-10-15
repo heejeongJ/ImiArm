@@ -714,6 +714,16 @@ function trainPage(el) {
     </div></div>`;
 
   $("#t-policy").onchange = (e) => ($("#t-lr").value = LR[e.target.value]);
+  // 대기 중 마지막 학습 설정 복원, 바꿀 때마다 이 브라우저에 저장
+  const FIELDS = { policy: "#t-policy", repo: "#t-repo", steps: "#t-steps", batch: "#t-batch", lr: "#t-lr", save_freq: "#t-save" };
+  let saved = {};
+  try { saved = JSON.parse(storeGet("trainSettings", "{}")) || {}; } catch {}
+  for (const [k, sel] of Object.entries(FIELDS)) {
+    if (k !== "repo" && saved[k] != null && (k !== "policy" || POLICY_KO[saved[k]])) $(sel).value = saved[k];
+  }
+  const saveSettings = () => storeSet("trainSettings", JSON.stringify(
+    Object.fromEntries(Object.entries(FIELDS).map(([k, sel]) => [k, $(sel).value]))));
+  Object.values(FIELDS).forEach((sel) => $(sel).addEventListener("change", saveSettings));
   let datasets = [];
   const repoNote = () => {
     const d = datasets.find((x) => x.repo === $("#t-repo").value);
@@ -738,6 +748,11 @@ function trainPage(el) {
     if (first) {
       datasets = s.datasets;
       $("#t-repo").innerHTML = datasets.map((d) => `<option value="${esc(d.repo)}">${esc(d.repo)}</option>`).join("");
+      // 기본 데이터셋: 마지막 선택, 녹화 중인 데이터셋, 첫 데이터셋 순
+      const has = (r) => datasets.some((d) => d.repo === r);
+      const recording = has(saved.repo) ? null : (await api("/api/rig").catch(() => ({}))).dataset;
+      if (has(saved.repo)) $("#t-repo").value = saved.repo;
+      else if (has(recording)) $("#t-repo").value = recording;
       repoNote();
       first = false;
     }
