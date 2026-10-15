@@ -214,11 +214,17 @@ class Trainer:
 
     def status(self):
         """화면용 학습 상태, 서버 재시작 후에는 마지막 학습 기록 사용"""
-        rows = self.rows
+        rows, run, state, total, params = self.rows, self.run, self.state, self.total, self.params
         if self.run is None:
+            # 서버 재시작 후: 마지막 학습의 설정과 결과를 함께 표시
             runs = sorted(store.TRAIN_DIR.glob("*/metarobo_log.jsonl"), key=lambda p: p.stat().st_mtime)
             if runs:
-                rows = store.run_log(runs[-1].parent.name)
+                d = runs[-1].parent
+                rows, run = store.run_log(d.name), d.name
+                p = store.run_params(d) or {}
+                params = {k: v for k, v in p.items() if k != "state"}
+                total = params.get("steps") or (rows[-1]["step"] if rows else 0)
+                state = p.get("state") or ("done" if rows and rows[-1]["step"] >= total else "stopped")
         last = rows[-1] if rows else None
         remaining = self.eta_s if self.state == "running" else None
         hint = None
@@ -227,8 +233,8 @@ class Trainer:
                     "Windows 설정 > 시스템 > 개발자용에서 개발자 모드를 켜면 해결됩니다.")
         return {
             "hint": hint,
-            "state": self.state, "run": self.run, "step": self.step if self.run else (last or {}).get("step", 0),
-            "total": self.total, "params": self.params, "remaining_s": remaining,
+            "state": state, "run": run, "step": self.step if self.run else (last or {}).get("step", 0),
+            "total": total, "params": params, "remaining_s": remaining,
             "stage": self.stage, "log_freq": self.log_freq, "elapsed_s": time.time() - self.started if self.state == "running" else None,
             "loss": [[r["step"], r["loss"]] for r in rows],
             "recent": rows[-8:][::-1], "tail": list(self.tail)[-12:], "gpu": gpu_info(),
