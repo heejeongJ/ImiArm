@@ -193,7 +193,9 @@ function operatePage(el) {
       <section class="card stack">
         <div class="between"><div class="title">시연 수집</div><div class="sub" id="rec-progress">-</div></div>
         <div class="progress"><div id="rec-bar" style="width:0"></div></div>
-        <div class="field"><label for="task">작업 문장</label><input id="task" class="input" type="text"></div>
+        <div class="field"><label for="task">작업 문장</label>
+          <input id="task" class="input" type="text" list="task-list" autocomplete="off">
+          <datalist id="task-list"></datalist><div class="note" id="task-note"></div></div>
         <button id="rec-main" class="btn primary lg" type="button" disabled>녹화 시작</button>
         <div class="btn-row">
           <button class="btn flex" type="button" data-finish="success" disabled>성공</button>
@@ -244,6 +246,27 @@ function operatePage(el) {
   $("#joint-tabs").onclick = (e) => e.target.dataset.j && setJoint(e.target.dataset.j);
 
   $("#task").value = ov.task;
+  // 녹화 작업 문장 추천, 직접 고치기 전이면 데이터셋에서 가장 많이 쓴 문장으로 채움
+  let recTasks = [], recRepo = null, recSaved = null, taskEdited = false;
+  async function loadRecTasks(repo) {
+    recTasks = await api(`/api/record/tasks?repo=${encodeURIComponent(repo)}`).catch(() => []);
+    $("#task-list").innerHTML = recTasks.map((t) => `<option value="${esc(t.task)}" label="${esc(t.count != null ? `${t.source}, ${t.count}개` : t.source)}"></option>`).join("");
+    const top = recTasks.find((t) => t.count != null);
+    if (!taskEdited && top) $("#task").value = top.task;
+    taskNote();
+  }
+  // 지금 문장으로 녹화한 개수, 데이터셋에 없는 문장이면 섞임 경고
+  function taskNote() {
+    const v = $("#task").value.trim();
+    const mine = recTasks.filter((t) => t.count != null);
+    const hit = mine.find((t) => t.task === v);
+    const note = $("#task-note");
+    note.classList.toggle("warn", !hit && mine.length > 0);
+    note.textContent = hit ? `기존 문장, 에피소드 ${hit.count}개`
+      : mine.length ? "신규 문장, 녹화하면 작업 문장이 섞임"
+      : "첫 작업 문장";
+  }
+  $("#task").oninput = () => { taskEdited = true; taskNote(); };
 
   // 장치 카드, 상태가 바뀔 때만 다시 그림
   let devKey = "";
@@ -304,6 +327,13 @@ function operatePage(el) {
     $("#rec-counts").textContent = `성공 ${c.success}, 실패 ${c.fail}`;
     $("#rec-avg").textContent = c.avg_length_s ? `평균 길이 ${c.avg_length_s.toFixed(0)}초` : "";
     $("#rec-dataset").textContent = `데이터셋 ${s.dataset}`;
+    // 데이터셋이 바뀌거나 에피소드를 저장하면 추천과 개수 다시 읽기
+    const saved = s.last_saved ? s.last_saved.index : null;
+    if (s.dataset !== recRepo || saved !== recSaved) {
+      recRepo = s.dataset;
+      recSaved = saved;
+      loadRecTasks(s.dataset);
+    }
     const main = $("#rec-main");
     main.classList.toggle("rec", !!r);
     if (r && r.state === "recording") {
