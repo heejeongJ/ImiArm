@@ -450,8 +450,8 @@ class Rig:
             log.info("데이터셋 마무리: %s", ds.repo_id)
             ds.finalize()
 
-    def load_policy(self, path):
-        """체크포인트로 obs -> action 함수 생성, 오래 걸려 제어 스레드 밖에서 호출"""
+    def load_policy(self, path, ensemble=False):
+        """체크포인트로 obs -> action 함수 생성, ensemble이면 ACT 시간 앙상블, 오래 걸려 제어 스레드 밖에서 호출"""
         if path == "mock":
             return lambda obs: mock_pose(time.time())
         if self.robot is None:
@@ -471,6 +471,10 @@ class Rig:
         cfg = PreTrainedConfig.from_pretrained(path)
         cfg.pretrained_path = path
         cfg.device = device
+        # 시간 앙상블: 매 스텝 예측 후 겹치는 예측 가중 평균 (ACT 논문 기본 계수 0.01)
+        if ensemble and cfg.type == "act":
+            cfg.temporal_ensemble_coeff, cfg.n_action_steps = 0.01, 1
+            log.info("시간 앙상블 적용")
         policy = get_policy_class(cfg.type).from_pretrained(path, config=cfg).to(device).eval()
         pre, post = make_pre_post_processors(policy_cfg=cfg, pretrained_path=path,
                                              preprocessor_overrides={"device_processor": {"device": device}})

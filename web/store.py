@@ -383,12 +383,12 @@ def evals():
     return _read(OUT / "evals.json", [])
 
 
-def new_eval(checkpoint, label, task):
-    """평가 세션 생성, 작업 문장 함께 저장"""
+def new_eval(checkpoint, label, task, mode=None):
+    """평가 세션 생성, 작업 문장과 동작 실행 방식 함께 저장"""
     with _lock:
         data = evals()
         session = {"id": datetime.now().strftime("%Y%m%d_%H%M%S"), "checkpoint": checkpoint, "label": label,
-                   "task": task, "grid": list(C.EVAL_GRID), "trials": []}
+                   "task": task, "mode": mode, "grid": list(C.EVAL_GRID), "trials": []}
         data.append(session)
         _write(OUT / "evals.json", data)
         return session

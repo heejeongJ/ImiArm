@@ -170,7 +170,8 @@ class App:
 
     def eval_prepare(self, b):
         """평가 모델 준비"""
-        self.eval.prepare(b["checkpoint"], b.get("label") or b["checkpoint"], b.get("task") or C.TASK)
+        self.eval.prepare(b["checkpoint"], b.get("label") or b["checkpoint"], b.get("task") or C.TASK,
+                          b.get("mode") or None)
 
     def eval_trial_start(self, b):
         """평가 회차 시작"""

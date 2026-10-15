@@ -1037,11 +1037,20 @@ function evalPage(el) {
     <section class="card" style="flex:1 1 360px" id="e-hist"></section></div>`;
   let key = "";
   // 고른 모델과 작업 문장, 폼을 다시 그려도 유지
-  let ckptVal = wanted, taskVal = null, taskEdited = false;
+  let ckptVal = wanted, taskVal = null, taskEdited = false, modeVal = "ensemble";
+  // 동작 실행 방식, ACT 모델에서만 선택
+  const MODES = { ensemble: ["매 스텝 보정 (시간 앙상블)", "부드러움, 위치 계속 보정"], chunk: ["구간 실행 (100스텝 단위)", "학습 기본값, 약 3초마다 새로 예측"] };
+  const MODE_SHORT = { ensemble: "시간 앙상블", chunk: "구간 실행" };
+  const isAct = () => $("#e-ckpt")?.selectedOptions[0]?.dataset.policy === "act";
+  const modeShow = () => {
+    if (!$("#e-mode-wrap")) return;
+    $("#e-mode-wrap").hidden = !isAct();
+    $("#e-mode-note").textContent = MODES[modeVal][1];
+  };
 
   // 평가 준비 폼
   const setupHtml = (s) => {
-    const opts = s.checkpoints.map((c) => `<option value="${esc(c.path)}" data-label="${esc(`${c.run.split("_")[0].toUpperCase()} ${num(c.step)}스텝`)}" ${c.path === ckptVal ? "selected" : ""}>${esc(c.run)}, ${num(c.step)}스텝</option>`);
+    const opts = s.checkpoints.map((c) => `<option value="${esc(c.path)}" data-policy="${esc(c.run.split("_")[0])}" data-label="${esc(`${c.run.split("_")[0].toUpperCase()} ${num(c.step)}스텝`)}" ${c.path === ckptVal ? "selected" : ""}>${esc(c.run)}, ${num(c.step)}스텝</option>`);
     if (s.mock) opts.push(`<option value="mock" data-label="모의 정책" ${ckptVal === "mock" ? "selected" : ""}>모의 정책 (화면 확인용)</option>`);
     const rigOk = ["idle", "teleop"].includes(s.rig);
     return `
@@ -1053,13 +1062,16 @@ function evalPage(el) {
       <div class="field"><label for="e-task">작업 문장</label>
         <input id="e-task" class="input" list="e-task-list" autocomplete="off" value="${esc(taskVal ?? overview.task)}">
         <datalist id="e-task-list"></datalist><div class="note" id="e-task-note"></div></div>
+      <div class="field" id="e-mode-wrap"><label for="e-mode">동작 실행 방식</label>
+        <select id="e-mode" class="input">${Object.entries(MODES).map(([k, [t]]) => `<option value="${k}" ${k === modeVal ? "selected" : ""}>${t}</option>`).join("")}</select>
+        <div class="note" id="e-mode-note"></div></div>
       <div class="note">물체 위치 ${s.grid[0] * s.grid[1]}곳에서 한 번씩 실행합니다. 회차마다 최대 ${overview.episode_time_s}초 동안 정책을 실행하고, 끝나면 시작 자세로 돌아갑니다.</div>
       <div class="btn-row"><button class="btn primary lg flex" id="e-prepare" ${opts.length && rigOk && !s.loading ? "" : "disabled"}>${s.loading ? "모델 읽는 중" : "평가 준비"}</button></div>`;
   };
 
   // 진행 중인 평가
   const runHtml = (s) => `
-    <div class="between"><div class="title">진행 중인 평가</div><div class="sub">${esc(s.session.label)}</div></div>
+    <div class="between"><div class="title">진행 중인 평가</div><div class="sub">${esc(s.session.label)}${s.session.mode ? `, ${MODE_SHORT[s.session.mode]}` : ""}</div></div>
     <div class="row" style="gap:12px 56px" id="e-stats"></div>
     <div class="row" style="gap:20px">
       <div style="flex:1 1 320px;min-width:0"><div class="media" style="height:310px" id="e-cam">장치 연결 안 됨</div></div>
@@ -1105,7 +1117,8 @@ function evalPage(el) {
       : `${model}의 학습 데이터 문장을 찾지 못했습니다. 칸을 눌러 추천 문장을 고를 수 있습니다.`;
   }
   $("#e-main").onchange = (e) => {
-    if (e.target.id === "e-ckpt") { ckptVal = e.target.value; taskEdited = false; loadTasks(); }
+    if (e.target.id === "e-ckpt") { ckptVal = e.target.value; taskEdited = false; loadTasks(); modeShow(); }
+    if (e.target.id === "e-mode") { modeVal = e.target.value; modeShow(); }
   };
   $("#e-main").oninput = (e) => {
     if (e.target.id === "e-task") { taskVal = e.target.value; taskEdited = true; }
@@ -1118,7 +1131,7 @@ function evalPage(el) {
     if (t.id === "e-prepare") {
       const o = $("#e-ckpt").selectedOptions[0];
       t.disabled = true;
-      await act("/api/eval/prepare", { checkpoint: o.value, label: o.dataset.label, task: $("#e-task").value });
+      await act("/api/eval/prepare", { checkpoint: o.value, label: o.dataset.label, task: $("#e-task").value, mode: isAct() ? modeVal : null });
       key = "";
     }
     if (t.id === "e-trial") { t.disabled = true; await act("/api/eval/trial/start"); }
@@ -1137,7 +1150,7 @@ function evalPage(el) {
     if (k !== key) {
       key = k;
       $("#e-main").innerHTML = s.session ? runHtml(s) : setupHtml(s);
-      if (!s.session) loadTasks();
+      if (!s.session) { loadTasks(); modeShow(); }
     }
     if (s.session) {
       const tr = s.session.trials, N = s.grid[0] * s.grid[1];
@@ -1167,7 +1180,7 @@ function evalPage(el) {
         const ok = h.trials.filter((x) => x.success).length, n = h.trials.length;
         const cur = s.session && h.id === s.session.id;
         return `<div><div class="between"><div style="font-weight:600">${esc(h.label)}</div><div style="font-weight:600">${ok} / ${n}</div></div>
-          <div class="note">${esc(h.id.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2}).*/, "$1-$2-$3 $4:$5"))}${cur ? ", 평가 진행 중" : ""}</div>
+          <div class="note">${esc(h.id.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2}).*/, "$1-$2-$3 $4:$5"))}${h.mode ? `, ${MODE_SHORT[h.mode]}` : ""}${cur ? ", 평가 진행 중" : ""}</div>
           ${h.task ? `<div class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.task)}">${esc(h.task)}</div>` : ""}
           <div class="bar"><div style="width:${n ? (ok / n) * 100 : 0}%"></div></div></div>`;
       }).join("") : `<div class="note" style="padding:8px 0">아직 평가 기록이 없습니다.</div>`}</div>`;
