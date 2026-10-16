@@ -97,6 +97,10 @@ class Trainer:
         ]
         # SmolVLA는 smolvla_base에서 미세조정
         args.insert(1, f"--policy.path={_smolvla_base()}" if policy == "smolvla" else f"--policy.type={policy}")
+        # smolvla_base 카메라 이름(camera1~3)에 맞춰 config 카메라 순서대로 연결, 평가 때는 저장된 전처리기가 같은 연결 사용
+        if policy == "smolvla":
+            names = {f"observation.images.{n}": f"observation.images.camera{i}" for i, n in enumerate(C.CAMERAS, 1)}
+            args.append(f"--rename_map={json.dumps(names)}")
         # 삭제 표시와 유지하지 않은 실패 에피소드 제외
         # exclude_episodes는 정식 릴리스(0.6.0, 0.6.1)에 없어 포함 목록(episodes)으로 전달
         excluded = store.excluded_episodes(repo)
