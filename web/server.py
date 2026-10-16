@@ -81,8 +81,8 @@ class App:
         return store.episode_signal(q["repo"], int(q["ep"]), int(q["chunk"]), int(q["file"]))
 
     def train_status(self, q):
-        """학습 상태, 체크포인트, 데이터셋 목록"""
-        return {**self.trainer.status(), "checkpoints": store.checkpoints(), "runs": store.runs(),
+        """학습 상태, 체크포인트, 데이터셋 목록, policy를 주면 그 정책의 최근 학습"""
+        return {**self.trainer.status(q.get("policy")),"checkpoints": store.checkpoints(), "runs": store.runs(),
                 "datasets": store.list_datasets()}
 
     def train_run(self, q):
