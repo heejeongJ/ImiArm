@@ -736,7 +736,13 @@ function dataPage(el) {
 // 학습 화면: 설정, 진행, 손실 곡선, 체크포인트
 function trainPage(el) {
   const ov = overview;
-  const LR = { act: "0.00001", smolvla: "0.0001", diffusion: "0.0001" };
+  // 정책별 기본 설정, SmolVLA는 메모리가 커서 배치를 줄이고 스텝을 늘림
+  const td = ov.train_defaults;
+  const DEFAULTS = {
+    act: { steps: td.steps, batch: td.batch, lr: "0.00001" },
+    smolvla: { steps: 30000, batch: 4, lr: "0.0001" },
+    diffusion: { steps: td.steps, batch: td.batch, lr: "0.0001" },
+  };
   el.innerHTML = `<div class="row" style="align-items:flex-start">
     <div class="col" style="flex:1 1 320px">
       <section class="card stack">
@@ -746,9 +752,9 @@ function trainPage(el) {
         <div class="field"><label for="t-repo">데이터</label><select id="t-repo" class="input"></select>
           <div class="note" id="t-repo-note"></div></div>
         <div class="grid2">
-          <div class="field"><label for="t-steps">스텝</label><input id="t-steps" class="input" type="number" min="1" value="${ov.train_defaults.steps}"></div>
-          <div class="field"><label for="t-batch">배치 크기</label><input id="t-batch" class="input" type="number" min="1" value="${ov.train_defaults.batch}"></div>
-          <div class="field"><label for="t-lr">학습률</label><input id="t-lr" class="input" type="text" value="${LR[ov.policy] ?? "0.0001"}"></div>
+          <div class="field"><label for="t-steps">스텝</label><input id="t-steps" class="input" type="number" min="1"></div>
+          <div class="field"><label for="t-batch">배치 크기</label><input id="t-batch" class="input" type="number" min="1"></div>
+          <div class="field"><label for="t-lr">학습률</label><input id="t-lr" class="input" type="text"></div>
           <div class="field"><label for="t-save">저장 주기</label><input id="t-save" class="input" type="number" min="1" value="5000"></div>
         </div>
         <div class="btn-row"><button id="t-start" class="btn primary lg" style="flex:2 1 0" type="button">학습 시작</button>
@@ -779,17 +785,19 @@ function trainPage(el) {
     </div></div>
     <dialog id="t-dlg" class="dlg" aria-label="지난 학습 기록"></dialog>`;
 
-  $("#t-policy").onchange = (e) => ($("#t-lr").value = LR[e.target.value]);
-  // 대기 중 마지막 학습 설정 복원, 바꿀 때마다 이 브라우저에 저장
-  const FIELDS = { policy: "#t-policy", repo: "#t-repo", steps: "#t-steps", batch: "#t-batch", lr: "#t-lr", save_freq: "#t-save" };
+  // 설정 칸은 정책 기본값으로 시작, 정책을 바꾸면 그 정책 기본값으로
+  const applyDefaults = () => {
+    const d = DEFAULTS[$("#t-policy").value] ?? DEFAULTS.act;
+    $("#t-steps").value = d.steps;
+    $("#t-batch").value = d.batch;
+    $("#t-lr").value = d.lr;
+  };
+  applyDefaults();
+  $("#t-policy").onchange = () => { applyDefaults(); refresh(); };
+  // 데이터셋 선택만 이 브라우저에 기억
   let saved = {};
   try { saved = JSON.parse(storeGet("trainSettings", "{}")) || {}; } catch {}
-  for (const [k, sel] of Object.entries(FIELDS)) {
-    if (k !== "repo" && saved[k] != null && (k !== "policy" || POLICY_KO[saved[k]])) $(sel).value = saved[k];
-  }
-  const saveSettings = () => storeSet("trainSettings", JSON.stringify(
-    Object.fromEntries(Object.entries(FIELDS).map(([k, sel]) => [k, $(sel).value]))));
-  Object.values(FIELDS).forEach((sel) => $(sel).addEventListener("change", saveSettings));
+  $("#t-repo").addEventListener("change", () => storeSet("trainSettings", JSON.stringify({ repo: $("#t-repo").value })));
   let datasets = [];
   const repoNote = () => {
     const d = datasets.find((x) => x.repo === $("#t-repo").value);
@@ -809,8 +817,9 @@ function trainPage(el) {
 
   // 학습 상태 주기 갱신, 선택 목록은 처음 한 번만 채움
   let first = true;
-  poll(async () => {
-    const s = await api("/api/train");
+  const refresh = async () => {
+    // 오른쪽 요약은 고른 정책의 최근 학습, 학습 중이면 현재 학습
+    const s = await api(`/api/train?policy=${encodeURIComponent($("#t-policy").value)}`);
     if (first) {
       datasets = s.datasets;
       $("#t-repo").innerHTML = datasets.map((d) => `<option value="${esc(d.repo)}">${esc(d.repo)}</option>`).join("");
@@ -894,7 +903,8 @@ function trainPage(el) {
           ${r.checkpoints.length ? r.checkpoints.map((c) => ckptRow(c)).join("") : `<div class="note">체크포인트 없음${r.step ? `, ${num(r.step)}스텝까지 기록` : ""}</div>`}
         </div>`).join("")
       : `<div class="note" style="padding:8px 0">저장된 체크포인트가 없습니다.</div>`;
-  }, 1500);
+  };
+  poll(refresh, 1500);
 
   // 학습 이름은 지난 학습 창, 스텝은 체크포인트 창
   const openFrom = (e) => {
