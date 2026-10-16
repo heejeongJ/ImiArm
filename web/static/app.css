@@ -37,6 +37,8 @@ nav a.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
 .btn-row{display:flex;flex-wrap:wrap;gap:8px}
 .link{background:none;border:0;padding:0;color:var(--blue);font-weight:600}
 .link:hover{color:var(--blue-hover)}
+.link.danger{color:var(--red);font-weight:500}
+.link.danger:hover{color:#B91C1C}
 
 .page{display:flex;flex-direction:column;gap:20px;padding:20px 28px 40px;max-width:1680px;margin:0 auto}
 .row{display:flex;flex-wrap:wrap;gap:20px}
