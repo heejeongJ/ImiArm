@@ -185,6 +185,12 @@ class App:
         """평가 종료"""
         self.eval.end()
 
+    def eval_delete(self, b):
+        """평가 기록 하나 삭제, 진행 중인 평가는 거부"""
+        if self.eval.session and self.eval.session["id"] == b["id"]:
+            raise Busy("진행 중인 평가는 지울 수 없습니다")
+        store.delete_eval(b["id"])
+
     def calib_start(self, b):
         """캘리브레이션 시작"""
         self.calib.start(b["arm"])
@@ -219,6 +225,7 @@ def make_handler(app):
         "/api/train/stop": app.train_stop,
         "/api/eval/prepare": app.eval_prepare, "/api/eval/trial/start": app.eval_trial_start,
         "/api/eval/trial/finish": app.eval_trial_finish, "/api/eval/end": app.eval_end,
+        "/api/eval/delete": app.eval_delete,
         "/api/calib/start": app.calib_start, "/api/calib/middle": app.calib_middle,
         "/api/calib/finish": app.calib_finish, "/api/calib/cancel": app.calib_cancel,
     }

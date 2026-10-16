@@ -404,3 +404,13 @@ def add_trial(session_id, trial):
                 _write(OUT / "evals.json", data)
                 return s
         raise KeyError(session_id)
+
+
+def delete_eval(session_id):
+    """평가 세션 하나 삭제"""
+    with _lock:
+        data = evals()
+        rest = [s for s in data if s["id"] != session_id]
+        if len(rest) == len(data):
+            raise KeyError(session_id)
+        _write(OUT / "evals.json", rest)

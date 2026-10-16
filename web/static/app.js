@@ -1152,6 +1152,17 @@ function evalPage(el) {
     if (t.id === "e-end") { await act("/api/eval/end"); key = ""; }
   };
 
+  // 평가 기록 삭제 확인 후 삭제
+  let histHtml = "";
+  $("#e-hist").onclick = async (e) => {
+    const t = e.target.closest("[data-del-eval]");
+    if (!t) return;
+    if (!confirm(`${t.dataset.label} 평가 기록(${t.dataset.score})을 지웁니다.\n모델 파일은 그대로 남고, 지운 기록은 되살릴 수 없습니다. 계속할까요?`)) return;
+    t.disabled = true;
+    if (await act("/api/eval/delete", { id: t.dataset.delEval })) toast("평가 기록을 지웠습니다.");
+    else t.disabled = false;
+  };
+
   // 평가 상태 주기 갱신, 구성이 바뀔 때만 다시 그림
   poll(async () => {
     const [s, rig] = await Promise.all([api("/api/eval"), api("/api/rig")]);
@@ -1183,17 +1194,21 @@ function evalPage(el) {
     }
 
     const hist = s.history.filter((h) => h.trials.length || (s.session && h.id === s.session.id)).reverse();
-    $("#e-hist").innerHTML = `
+    const html = `
       <div class="title">모델별 성공률</div>
       <div class="note" style="margin:2px 0 10px">같은 물체 위치 ${s.grid[0] * s.grid[1]}곳에서 한 번씩 측정</div>
       <div class="list">${hist.length ? hist.map((h) => {
         const ok = h.trials.filter((x) => x.success).length, n = h.trials.length;
         const cur = s.session && h.id === s.session.id;
-        return `<div><div class="between"><div style="font-weight:600">${esc(h.label)}</div><div style="font-weight:600">${ok} / ${n}</div></div>
+        return `<div><div class="between"><div style="font-weight:600">${esc(h.label)}</div>
+          <div class="row" style="gap:12px;align-items:center"><div style="font-weight:600">${ok} / ${n}</div>
+          ${cur ? "" : `<button class="link danger" type="button" data-del-eval="${esc(h.id)}" data-label="${esc(h.label)}" data-score="${ok} / ${n}">삭제</button>`}</div></div>
           <div class="note">${esc(h.id.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2}).*/, "$1-$2-$3 $4:$5"))}${h.mode ? `, ${MODE_SHORT[h.mode]}` : ""}${cur ? ", 평가 진행 중" : ""}</div>
           ${h.task ? `<div class="note" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.task)}">${esc(h.task)}</div>` : ""}
           <div class="bar"><div style="width:${n ? (ok / n) * 100 : 0}%"></div></div></div>`;
       }).join("") : `<div class="note" style="padding:8px 0">아직 평가 기록이 없습니다.</div>`}</div>`;
+    // 내용이 바뀔 때만 다시 그려 삭제 버튼 클릭 유지
+    if (html !== histHtml) $("#e-hist").innerHTML = histHtml = html;
   }, 500);
 }
 
