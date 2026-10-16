@@ -4,6 +4,7 @@ LeRobot CLI를 `config.py` 설정 하나로 실행하는 래퍼입니다.
 
 지원 버전: LeRobot 0.6.0 이상 정식 릴리스 (0.6.0, 0.6.1에서 확인). 설치 버전은 `python -c "import importlib.metadata as m; print(m.version('lerobot'))"`로 확인합니다.
 학습에는 `lerobot[training]` 추가 패키지와 conda-forge FFmpeg가 필요합니다 (`pip install "lerobot[training]"`, `conda install -c conda-forge ffmpeg`).
+SmolVLA 학습에는 `lerobot[smolvla]` 추가 패키지가 더 필요합니다. lerobot 본체가 바뀌지 않도록 설치된 버전을 붙여 설치합니다 (예: `pip install "lerobot[smolvla]==0.6.0"`). 첫 학습 때 `lerobot/smolvla_base` 모델(약 1GB)을 받으므로 인터넷 연결이 필요하며, 미리 받아 두려면 `python -c "from huggingface_hub import snapshot_download; snapshot_download('lerobot/smolvla_base')"`를 실행합니다.
 0.6.0에서는 `record`가 데이터셋 이름 뒤에 날짜를 붙여 저장합니다. 이때 `train`이 날짜 붙은 이름을 안내하니 `config.py`의 `DATASET`을 그 이름으로 바꾸세요. 0.6.1부터는 이름이 그대로 유지됩니다.
 
 ## 준비
