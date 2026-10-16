@@ -226,33 +226,45 @@ class Trainer:
         else:
             self.proc.terminate()
 
-    def status(self):
-        """화면용 학습 상태, 서버 재시작 후에는 마지막 학습 기록 사용"""
-        rows, run, state, total, params = self.rows, self.run, self.state, self.total, self.params
-        if self.run is None:
-            # 서버 재시작 후: 마지막 학습의 설정과 결과를 함께 표시
-            runs = sorted(store.TRAIN_DIR.glob("*/metarobo_log.jsonl"), key=lambda p: p.stat().st_mtime)
-            if runs:
-                d = runs[-1].parent
+    def status(self, policy=None):
+        """화면용 학습 상태, 학습 중이면 현재 학습, 아니면 고른 정책의 최근 학습"""
+        live = self.run is not None and (self.state == "running" or not policy or self.params.get("policy") == policy)
+        if live:
+            rows, run, state, total, params, step = self.rows, self.run, self.state, self.total, self.params, self.step
+        else:
+            # 이번 서버 실행의 학습이 다른 정책이거나 서버 재시작 후: 저장된 기록에서 찾기
+            rows, run, state, total, params = [], None, "idle", 0, {}
+            found = _latest_run(policy)
+            if found:
+                d, p = found
                 rows, run = store.run_log(d.name), d.name
-                p = store.run_params(d) or {}
                 params = {k: v for k, v in p.items() if k != "state"}
                 total = params.get("steps") or (rows[-1]["step"] if rows else 0)
                 state = p.get("state") or ("done" if rows and rows[-1]["step"] >= total else "stopped")
-        last = rows[-1] if rows else None
+            step = rows[-1]["step"] if rows else 0
         remaining = self.eta_s if self.state == "running" else None
         hint = None
-        if self.state == "failed" and any("WinError 1314" in line for line in self.tail):
+        if live and self.state == "failed" and any("WinError 1314" in line for line in self.tail):
             hint = ("체크포인트는 저장됐지만 checkpoints/last 바로가기를 만들지 못해 학습이 멈췄습니다. "
                     "Windows 설정 > 시스템 > 개발자용에서 개발자 모드를 켜면 해결됩니다.")
         return {
             "hint": hint,
-            "state": state, "run": run, "step": self.step if self.run else (last or {}).get("step", 0),
+            "state": state, "run": run, "step": step,
             "total": total, "params": params, "remaining_s": remaining,
             "stage": self.stage, "log_freq": self.log_freq, "elapsed_s": time.time() - self.started if self.state == "running" else None,
             "loss": [[r["step"], r["loss"]] for r in rows],
-            "recent": rows[-8:][::-1], "tail": list(self.tail)[-12:], "gpu": gpu_info(),
+            "recent": rows[-8:][::-1], "tail": list(self.tail)[-12:] if live else [], "gpu": gpu_info(),
         }
+
+
+def _latest_run(policy=None):
+    """기록이 있는 가장 최근 학습 폴더와 설정, policy를 주면 그 정책만"""
+    logs = sorted(store.TRAIN_DIR.glob("*/metarobo_log.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for f in logs:
+        p = store.run_params(f.parent) or {}
+        if not policy or p.get("policy") == policy:
+            return f.parent, p
+    return None
 
 
 _gpu = None
