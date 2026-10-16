@@ -27,6 +27,16 @@ STAGES = [
 ]
 
 
+def _smolvla_base():
+    """smolvla_base 로컬 경로, 윈도우에서 허브 이름이 역슬래시 경로로 바뀌어 받기 실패하는 문제 회피"""
+    from huggingface_hub import snapshot_download
+    try:
+        # 받은 파일은 캐시 재사용, 빠진 파일만 받음
+        return snapshot_download("lerobot/smolvla_base")
+    except Exception as e:
+        raise Busy(f"smolvla_base를 받지 못했습니다: {e}")
+
+
 def _hms(s):
     """"07:41" 같은 시간 문자열을 초로 변환"""
     sec = 0
@@ -86,7 +96,7 @@ class Trainer:
             "--wandb.enable=false",
         ]
         # SmolVLA는 smolvla_base에서 미세조정
-        args.insert(1, "--policy.path=lerobot/smolvla_base" if policy == "smolvla" else f"--policy.type={policy}")
+        args.insert(1, f"--policy.path={_smolvla_base()}" if policy == "smolvla" else f"--policy.type={policy}")
         # 삭제 표시와 유지하지 않은 실패 에피소드 제외
         # exclude_episodes는 정식 릴리스(0.6.0, 0.6.1)에 없어 포함 목록(episodes)으로 전달
         excluded = store.excluded_episodes(repo)
