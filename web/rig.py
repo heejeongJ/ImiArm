@@ -41,6 +41,38 @@ def mock_pose(t):
     }
 
 
+def release_parts(dev):
+    """연결 또는 해제 실패로 열린 채 남은 카메라와 모터 버스 닫기"""
+    for cam in getattr(dev, "cameras", {}).values():
+        try:
+            if cam.is_connected:
+                cam.disconnect()
+        except Exception:
+            log.exception("카메라 해제 실패")
+    bus = getattr(dev, "bus", None)
+    if bus is None or not bus.is_connected:
+        return
+    # 모터 무응답으로 토크 해제 실패 시 포트만 닫기
+    try:
+        bus.disconnect(getattr(dev.config, "disable_torque_on_disconnect", True))
+    except Exception:
+        log.warning("모터 토크 해제 실패, 포트만 닫음 (%s)", bus.port)
+        try:
+            if bus.is_connected:
+                bus.disconnect(disable_torque=False)
+        except Exception:
+            log.exception("포트 해제 실패 (%s)", bus.port)
+
+
+def connect_or_release(dev):
+    """장치 연결, 실패 시 이미 열린 버스와 카메라 닫고 예외 전달"""
+    try:
+        dev.connect(calibrate=False)
+    except Exception:
+        release_parts(dev)
+        raise
+
+
 class MockLeader:
     """모의 리더 암"""
     def get_action(self):
@@ -144,11 +176,11 @@ class Rig:
         leader = SO101Leader(SO101LeaderConfig(port=C.LEADER_PORT, id=C.LEADER_ID))
         # calibrate=False: 캘리브레이션이 없으면 input() 대기 대신 화면에 알림
         log.info("리더 연결 중 (%s)", C.LEADER_PORT)
-        leader.connect(calibrate=False)
+        connect_or_release(leader)
         self.leader = leader
         log.info("팔로워와 카메라 연결 중 (%s, 카메라 %s)", C.FOLLOWER_PORT,
                  ", ".join(f"{n}={i}" for n, i in C.CAMERAS.items()))
-        robot.connect(calibrate=False)
+        connect_or_release(robot)
         self.robot = robot
         missing = [n for n, d in (("팔로워", robot), ("리더", leader)) if not d.is_calibrated]
         if missing:
@@ -193,11 +225,14 @@ class Rig:
         except Exception:
             log.exception("데이터셋 정리 실패")
         for dev in (self.robot, self.leader):
+            if dev is None:
+                continue
             try:
-                if dev is not None and getattr(dev, "is_connected", True):
+                if getattr(dev, "is_connected", True):
                     dev.disconnect()
             except Exception:
                 log.exception("연결 해제 실패")
+            release_parts(dev)
         self.robot = self.leader = None
         self.policy = None
         self.frames = {}
