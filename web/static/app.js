@@ -223,7 +223,7 @@ function operatePage(el) {
         <form class="composer" id="cmd-form">
           <label for="cmd" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">명령 입력</label>
           <input id="cmd" type="text" autocomplete="off" placeholder="모델을 불러오면 명령할 수 있습니다" disabled>
-          <button class="icon-btn" type="button" aria-label="음성으로 말하기 (준비 중)" title="음성 입력은 준비 중입니다" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
+          <button class="icon-btn" type="button" id="cmd-mic" aria-label="음성으로 말하기" aria-pressed="false" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
           <button class="icon-btn fill" type="submit" id="cmd-send" aria-label="명령 보내기" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg></button>
         </form>
       </section>
@@ -499,10 +499,46 @@ function commandCard() {
     $("#cmd-chips").innerHTML = train.map((t) => `<button class="chip" type="button" data-task="${esc(t.task)}" title="이 문장으로 바로 실행">${esc(t.task)}</button>`).join("");
   }
 
+  // 음성 입력: 인식한 문장을 입력칸에만 채우고 전송은 사용자가 직접
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  const MIC_ERR = {
+    "not-allowed": "마이크 권한이 없습니다. 주소창의 사이트 설정에서 마이크를 허용하세요.",
+    "service-not-allowed": "이 브라우저에서 음성 인식을 쓸 수 없습니다. 크롬이나 엣지를 쓰세요.",
+    "audio-capture": "마이크를 찾지 못했습니다. 연결 상태를 확인하세요.",
+    "no-speech": "음성이 들리지 않았습니다. 다시 눌러 말해 주세요.",
+    network: "음성 인식 서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요.",
+  };
+  const setMic = (on) => {
+    $("#cmd-mic").classList.toggle("on", on);
+    $("#cmd-mic").setAttribute("aria-pressed", on);
+    $("#cmd-mic").setAttribute("aria-label", on ? "음성 듣기 멈추기" : "음성으로 말하기");
+  };
+  const listen = () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR();
+    rec.lang = "ko-KR";
+    rec.interimResults = true;
+    rec.onresult = (e) => { $("#cmd").value = [...e.results].map((r) => r[0].transcript).join("").trim(); };
+    rec.onerror = (e) => { if (e.error !== "aborted") toast(MIC_ERR[e.error] ?? `음성 인식 오류 (${e.error})`); };
+    rec.onend = () => {
+      rec = null;
+      setMic(false);
+      const box = $("#cmd");
+      if (box && !box.disabled && box.value) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    };
+    $("#cmd").value = "";
+    rec.start();
+    setMic(true);
+  };
+  $("#cmd-mic").onclick = listen;
+  onLeave(() => rec?.abort());
+
   // 명령 보내기
   const send = async (text) => {
     text = text.trim();
     if (!text) return;
+    rec?.abort();
     $("#cmd-send").disabled = true;
     if (await act("/api/command/send", { text })) $("#cmd").value = "";
     key = "";
@@ -545,8 +581,13 @@ function commandCard() {
     $("#cmd").disabled = !canSend;
     $("#cmd").placeholder = !s.loaded ? "모델을 불러오면 명령할 수 있습니다"
       : s.recording ? "녹화 중에는 명령할 수 없습니다"
-      : !canSend ? "장치를 연결하면 명령할 수 있습니다" : "로봇에게 시킬 작업을 입력하세요";
+      : !canSend ? "장치를 연결하면 명령할 수 있습니다"
+      : rec ? "듣는 중입니다. 말이 끝나면 입력칸에 채웁니다" : "로봇에게 시킬 작업을 입력하거나 말하세요";
     $("#cmd-send").disabled = !canSend;
+    // 명령할 수 없게 되면 듣기 중단
+    if (!canSend) rec?.abort();
+    $("#cmd-mic").disabled = !SR || !canSend;
+    $("#cmd-mic").title = !SR ? "이 브라우저는 음성 입력을 지원하지 않습니다. 크롬이나 엣지를 쓰세요." : "";
     $$("#cmd-chips .chip").forEach((c) => (c.disabled = !canSend));
     $("#cmd-run").hidden = !s.loaded;
     $("#cmd-stop").disabled = !s.running;
