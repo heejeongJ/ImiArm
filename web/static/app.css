@@ -116,6 +116,11 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
 .log{margin:0;max-height:220px;overflow:auto;background:#111827;color:#E5E7EB;border-radius:8px;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-all}
 
 .bubble{max-width:90%;padding:10px 14px;background:var(--bg);border-radius:14px 14px 14px 4px;align-self:flex-start}
+.bubble.me{align-self:flex-end;background:var(--blue);color:#fff;border-radius:14px 14px 4px 14px;overflow-wrap:anywhere}
+.chat{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;min-height:160px;max-height:360px;overflow-y:auto;padding:14px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{max-width:100%;min-height:32px;padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--text-2);font-size:13px;text-align:left;overflow-wrap:anywhere}
+.chip:hover:not(:disabled){border-color:var(--blue);color:var(--blue)}
 .composer{display:flex;align-items:center;gap:4px;padding:4px;background:var(--field);border:1px solid var(--line);border-radius:12px}
 .composer input{flex:1 1 auto;min-width:0;height:44px;padding:0 10px;background:transparent;border:0;color:var(--text)}
 .icon-btn{width:44px;height:44px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:8px;color:var(--blue)}

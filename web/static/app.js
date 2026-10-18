@@ -211,17 +211,21 @@ function operatePage(el) {
         </div>
         <div class="between note"><span id="rec-counts">-</span><span id="rec-avg"></span></div>
       </section>
-      <section class="card" style="display:flex;flex-direction:column;min-height:300px;flex:1 1 auto">
-        <div class="between"><div class="title">명령</div><div class="sub">연결 안 됨</div></div>
-        <div style="flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;padding:18px 0">
-          <div class="bubble note" style="color:var(--text-2)">자연어와 음성 명령은 아직 연결되지 않았습니다. 학습한 정책은 평가 화면에서 실행할 수 있습니다.</div>
+      <section class="card" id="cmd-card" style="display:flex;flex-direction:column;min-height:300px;flex:1 1 auto">
+        <div class="between"><div class="title">명령</div><div class="sub" id="cmd-state">-</div></div>
+        <div id="cmd-setup" class="stack" style="margin-top:12px"></div>
+        <div class="chat" id="cmd-log" aria-live="polite"></div>
+        <div class="btn-row" id="cmd-run" style="margin-bottom:10px" hidden>
+          <button class="btn flex" type="button" id="cmd-stop">정지 (자세 유지)</button>
+          <button class="btn quiet" type="button" id="cmd-home">시작 자세로</button>
         </div>
-        <div class="composer">
+        <div class="chips" id="cmd-chips"></div>
+        <form class="composer" id="cmd-form">
           <label for="cmd" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">명령 입력</label>
-          <input id="cmd" type="text" placeholder="명령 입력은 준비 중입니다" disabled>
-          <button class="icon-btn" type="button" aria-label="음성으로 말하기" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
-          <button class="icon-btn fill" type="button" aria-label="명령 보내기" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg></button>
-        </div>
+          <input id="cmd" type="text" autocomplete="off" placeholder="모델을 불러오면 명령할 수 있습니다" disabled>
+          <button class="icon-btn" type="button" aria-label="음성으로 말하기 (준비 중)" title="음성 입력은 준비 중입니다" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
+          <button class="icon-btn fill" type="submit" id="cmd-send" aria-label="명령 보내기" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg></button>
+        </form>
       </section>
     </aside>
   </div>`;
@@ -313,7 +317,7 @@ function operatePage(el) {
       connecting: ["연결 중", "장치를 여는 중입니다."],
       idle: ["연결됨, 대기", "지금 자세를 유지하고 있습니다."],
       teleop: ["텔레옵 중", "리더 암을 움직이면 팔로워가 따라 합니다."],
-      policy: ["정책 실행 중", "평가 화면에서 실행한 정책이 로봇을 움직입니다."],
+      policy: ["정책 실행 중", "평가 화면이나 명령 카드에서 실행한 정책이 로봇을 움직입니다."],
       homing: ["시작 자세로 이동 중", ""],
     }[s.mode];
     const buttons = {
@@ -434,6 +438,120 @@ function operatePage(el) {
     $("#load-value").textContent = lastLoad == null ? "-" : `${lastLoad.toFixed(0)}%`;
     $("#load-line").setAttribute("d", linePath(t.t, t.load, { w: 300, h: 80, x0: -10, x1: 0, y0: 0, y1: 100 }));
   }, 250);
+
+  commandCard();
+}
+
+// 명령 카드: 모델 불러오기, 문장 명령 실행, 대화 기록
+function commandCard() {
+  let key = "", logHtml = "", chipsFor = null, ckptVal = storeGet("cmdCkpt", null);
+  const policyOf = (c) => c.run.split("_")[0];
+
+  // 모델 선택 영역, 불러온 뒤에는 모델 이름과 내리기 버튼
+  const setupHtml = (s) => {
+    if (s.loaded) {
+      const c = s.checkpoints.find((x) => x.path === s.checkpoint);
+      const vla = s.checkpoint === "mock" || (c && policyOf(c) === "smolvla");
+      return `<div class="between"><div class="note" style="color:var(--text);font-weight:600">${esc(s.label)}</div>
+        <button class="link" type="button" id="cmd-unload">모델 내리기</button></div>
+        ${vla ? "" : `<div class="banner">이 정책은 문장을 읽지 않아 어떤 명령을 보내도 학습한 동작 하나만 합니다. 문장을 바꿔 시키려면 SmolVLA 모델을 쓰세요.</div>`}`;
+    }
+    const opts = s.checkpoints.map((c) => `<option value="${esc(c.path)}" data-label="${esc(`${POLICY_KO[policyOf(c)] ?? policyOf(c)} ${num(c.step)}스텝`)}" ${c.path === ckptVal ? "selected" : ""}>${esc(c.run)}, ${num(c.step)}스텝</option>`);
+    if (s.mock) opts.push(`<option value="mock" data-label="모의 정책" ${ckptVal === "mock" ? "selected" : ""}>모의 정책 (화면 확인용)</option>`);
+    const rigOk = ["idle", "teleop"].includes(s.rig);
+    const why = s.eval ? "평가 화면에서 모델을 쓰고 있습니다. 평가를 끝내면 불러올 수 있습니다."
+      : !rigOk && !s.loading ? "장치를 연결하면 모델을 불러올 수 있습니다." : "";
+    return `${s.error ? `<div class="banner err">${esc(s.error)}</div>` : ""}
+      ${opts.length ? `<div class="btn-row"><select id="cmd-ckpt" class="input" style="flex:1 1 160px;width:auto" aria-label="명령에 쓸 모델">${opts.join("")}</select>
+        <button class="btn" style="height:44px" type="button" id="cmd-load" ${rigOk && !s.loading && !s.eval ? "" : "disabled"}>${s.loading ? "읽는 중" : "불러오기"}</button></div>`
+        : `<div class="note">저장된 체크포인트가 없습니다. 학습 화면에서 먼저 학습하세요.</div>`}
+      ${why ? `<div class="note">${why}</div>` : `<div class="note">문장을 읽고 따르는 정책은 SmolVLA입니다.</div>`}`;
+  };
+
+  // 명령 하나의 결과 문구
+  const result = (m, s, isLast) => {
+    if (m.state === "running") return isLast && s.running ? `실행 중: ${num(s.steps)}스텝, ${s.elapsed_s.toFixed(1)}초` : "실행 중";
+    if (m.state === "done") return `${overview.episode_time_s}초 실행 후 멈췄습니다.`;
+    if (m.state === "replaced") return `${m.duration_s.toFixed(1)}초 실행 후 다음 명령으로 넘어갔습니다.`;
+    return `${m.duration_s != null ? `${m.duration_s.toFixed(1)}초 실행 후 ` : ""}중지했습니다.`;
+  };
+
+  // 대화 기록, 내용이 바뀔 때만 다시 그리고 맨 아래로 스크롤
+  const renderLog = (s) => {
+    const intro = s.loaded ? "보낸 문장을 작업 문장으로 정책을 실행합니다. 실행 중에 새 명령을 보내면 자세를 유지한 채 바로 바꿉니다."
+      : "모델을 불러오면 문장으로 로봇에게 작업을 시킬 수 있습니다.";
+    const html = `<div class="bubble note" style="color:var(--text-2)">${intro}</div>`
+      + s.messages.map((m, i) => `<div class="bubble me">${esc(m.text)}</div>
+        <div class="bubble note" style="color:var(--text-2)">${esc(result(m, s, i === s.messages.length - 1))}</div>`).join("");
+    if (html === logHtml) return;
+    logHtml = html;
+    const box = $("#cmd-log");
+    box.innerHTML = html;
+    box.scrollTop = box.scrollHeight;
+  };
+
+  // 학습 데이터 작업 문장 칩, 모델이 바뀔 때만 다시 읽기
+  async function loadChips(checkpoint) {
+    chipsFor = checkpoint;
+    const list = checkpoint ? await api(`/api/eval/tasks?checkpoint=${encodeURIComponent(checkpoint)}`).catch(() => []) : [];
+    if (chipsFor !== checkpoint || !$("#cmd-chips")) return;
+    const train = list.filter((t) => t.source === "학습 데이터");
+    $("#cmd-chips").innerHTML = train.map((t) => `<button class="chip" type="button" data-task="${esc(t.task)}" title="이 문장으로 바로 실행">${esc(t.task)}</button>`).join("");
+  }
+
+  // 명령 보내기
+  const send = async (text) => {
+    text = text.trim();
+    if (!text) return;
+    $("#cmd-send").disabled = true;
+    if (await act("/api/command/send", { text })) $("#cmd").value = "";
+    key = "";
+  };
+  $("#cmd-form").onsubmit = (e) => { e.preventDefault(); send($("#cmd").value); };
+  $("#cmd-chips").onclick = (e) => { const c = e.target.closest("[data-task]"); if (c && !c.disabled) send(c.dataset.task); };
+
+  // 불러오기, 내리기, 정지 버튼
+  $("#cmd-card").onclick = async (e) => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    if (t.id === "cmd-load") {
+      const o = $("#cmd-ckpt").selectedOptions[0];
+      t.disabled = true;
+      await act("/api/command/load", { checkpoint: o.value, label: o.dataset.label });
+    }
+    if (t.id === "cmd-unload") await act("/api/command/end");
+    if (t.id === "cmd-stop") await act("/api/command/stop");
+    if (t.id === "cmd-home") await act("/api/command/stop", { home: true });
+    key = "";
+  };
+  $("#cmd-card").onchange = (e) => {
+    if (e.target.id === "cmd-ckpt") { ckptVal = e.target.value; storeSet("cmdCkpt", ckptVal); }
+  };
+
+  // 명령 상태 주기 갱신
+  poll(async () => {
+    const s = await api("/api/command");
+    const k = `${s.loaded}|${s.checkpoint}|${s.loading}|${s.error}|${s.rig}|${s.eval}|${s.checkpoints.length}`;
+    if (k !== key) {
+      key = k;
+      $("#cmd-setup").innerHTML = setupHtml(s);
+    }
+    $("#cmd-state").textContent = s.running ? "실행 중" : s.loaded ? "대기" : s.loading ? "모델 읽는 중" : "모델 없음";
+    renderLog(s);
+    const want = s.loaded ? s.checkpoint : null;
+    if (want !== chipsFor) loadChips(want);
+    // 명령 가능 조건: 모델 있음, 장치 연결, 녹화 중 아님, 시작 자세 복귀 중 아님
+    const canSend = s.loaded && ["idle", "teleop", "policy"].includes(s.rig) && !s.recording && (s.rig !== "policy" || s.running);
+    $("#cmd").disabled = !canSend;
+    $("#cmd").placeholder = !s.loaded ? "모델을 불러오면 명령할 수 있습니다"
+      : s.recording ? "녹화 중에는 명령할 수 없습니다"
+      : !canSend ? "장치를 연결하면 명령할 수 있습니다" : "로봇에게 시킬 작업을 입력하세요";
+    $("#cmd-send").disabled = !canSend;
+    $$("#cmd-chips .chip").forEach((c) => (c.disabled = !canSend));
+    $("#cmd-run").hidden = !s.loaded;
+    $("#cmd-stop").disabled = !s.running;
+    $("#cmd-home").disabled = !["idle", "policy"].includes(s.rig) || (s.rig === "policy" && !s.running);
+  }, 500);
 }
 
 // 데이터 화면: 에피소드 목록, 영상 재생, 라벨 수정
