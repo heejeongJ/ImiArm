@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 import config as C
 import store
 from calib import Calibration
+from command import Command
 from evaluation import Evaluation
 from rig import JOINTS, Busy, Rig
 from training import Trainer, gpu_info
@@ -28,6 +29,7 @@ class App:
         self.calib = Calibration(self.rig)
         self.trainer = Trainer()
         self.eval = Evaluation(self.rig)
+        self.command = Command(self.rig)
 
     def overview(self, q):
         """장비 구성표와 화면 공통 설정"""
@@ -111,8 +113,9 @@ class App:
         self.rig.connect()
 
     def disconnect(self, b):
-        """평가 종료 후 장치 연결 해제"""
+        """평가와 명령 모델 정리 후 장치 연결 해제"""
         self.eval.end()
+        self.command.end()
         self.rig.disconnect()
 
     def teleop(self, b):
@@ -151,15 +154,17 @@ class App:
         self.trainer.resume(b["checkpoint"], int(b["steps"]) if b.get("steps") else None)
 
     def train_delete(self, b):
-        """체크포인트 하나 삭제, 학습 중이거나 평가에 쓰는 체크포인트는 거부"""
+        """체크포인트 하나 삭제, 학습 중이거나 평가, 명령 카드에 쓰는 체크포인트는 거부"""
         run, step = b["run"], int(b["step"])
         if self.trainer.state == "running" and self.trainer.run == run:
             raise Busy("진행 중인 학습은 지울 수 없습니다")
-        using = self.eval.in_use()
-        if using:
+        for using, why in ((self.eval.in_use(), "평가에 쓰고 있는 체크포인트입니다. 평가를 끝낸 뒤 지우세요"),
+                           (self.command.in_use(), "명령 카드에 불러온 체크포인트입니다. 모델을 내린 뒤 지우세요")):
+            if not using:
+                continue
             ckpt = (store.ROOT / using).resolve()
             if (store.TRAIN_DIR / run).resolve() in ckpt.parents and ckpt.parent.name.isdigit() and int(ckpt.parent.name) == step:
-                raise Busy("평가에 쓰고 있는 체크포인트입니다. 평가를 끝낸 뒤 지우세요")
+                raise Busy(why)
         target, freed = store.delete_checkpoint(run, step)
         log.info("학습 결과 삭제: %s (%.1fMB)", target.relative_to(store.ROOT), freed / 2**20)
         return {"freed": freed}
@@ -169,7 +174,9 @@ class App:
         self.trainer.stop()
 
     def eval_prepare(self, b):
-        """평가 모델 준비"""
+        """평가 모델 준비, 명령 카드 모델이 떠 있으면 거부"""
+        if self.command.in_use():
+            raise Busy("명령 카드에서 모델을 쓰고 있습니다. 조작 화면에서 모델을 내린 뒤 평가하세요")
         self.eval.prepare(b["checkpoint"], b.get("label") or b["checkpoint"], b.get("task") or C.TASK,
                           b.get("mode") or None)
 
@@ -190,6 +197,29 @@ class App:
         if self.eval.session and self.eval.session["id"] == b["id"]:
             raise Busy("진행 중인 평가는 지울 수 없습니다")
         store.delete_eval(b["id"])
+
+    def command_status(self, q):
+        """명령 카드 상태, 대화 기록, 체크포인트 목록"""
+        return {**self.command.status(), "checkpoints": store.checkpoints(), "mock": self.rig.mock,
+                "rig": self.rig.mode, "recording": self.rig.rec is not None, "eval": self.eval.in_use()}
+
+    def command_load(self, b):
+        """명령 모델 불러오기, 평가 중이면 거부"""
+        if self.eval.in_use():
+            raise Busy("평가 화면에서 모델을 쓰고 있습니다. 평가를 끝낸 뒤 불러오세요")
+        self.command.load(b["checkpoint"], b.get("label") or b["checkpoint"])
+
+    def command_send(self, b):
+        """명령 문장으로 정책 실행"""
+        self.command.send(b["text"])
+
+    def command_stop(self, b):
+        """명령 중지, home이면 시작 자세로 복귀"""
+        self.command.stop(go_home=bool(b.get("home")))
+
+    def command_end(self, b):
+        """명령 모델 내리기"""
+        self.command.end()
 
     def calib_start(self, b):
         """캘리브레이션 시작"""
@@ -216,6 +246,7 @@ def make_handler(app):
         "/api/eval/tasks": lambda q: store.task_suggestions(q.get("checkpoint")),
         "/api/record/tasks": lambda q: store.record_task_suggestions(q["repo"]),
         "/api/train": app.train_status, "/api/train/run": app.train_run, "/api/eval": app.eval_status, "/api/calib": app.calib_status,
+        "/api/command": app.command_status,
     }
     post_routes = {
         "/api/estop": app.estop, "/api/rig/connect": app.connect, "/api/rig/disconnect": app.disconnect,
@@ -226,6 +257,8 @@ def make_handler(app):
         "/api/eval/prepare": app.eval_prepare, "/api/eval/trial/start": app.eval_trial_start,
         "/api/eval/trial/finish": app.eval_trial_finish, "/api/eval/end": app.eval_end,
         "/api/eval/delete": app.eval_delete,
+        "/api/command/load": app.command_load, "/api/command/send": app.command_send,
+        "/api/command/stop": app.command_stop, "/api/command/end": app.command_end,
         "/api/calib/start": app.calib_start, "/api/calib/middle": app.calib_middle,
         "/api/calib/finish": app.calib_finish, "/api/calib/cancel": app.calib_cancel,
     }
@@ -387,6 +420,7 @@ def serve(mock=False, host="127.0.0.1", port=None):
         pass
     finally:
         app.eval.end()
+        app.command.end()
         app.rig.disconnect()
         app.calib.cancel()
         if app.trainer.proc and app.trainer.proc.poll() is None:
